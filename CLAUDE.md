@@ -212,6 +212,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - 品牌升级："AI Interview" → "试炼 (MockPilot)"，容器名 / PROJECT_NAME / 前端 title 全部更新
 - **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
 - **Phase 2 实施完成**（2026-07-10）：核心面试 LangGraph 化 + 4 个 P0 bug 修复 + YAML prompt 激活 + JSON 解析兜底
+- **Phase 3 设计完成**（2026-07-10）：RAG 管线升级 Spec + 16 任务实施计划，待执行。含 app/retrieval/ 模块（vector + BM25 + RRF + rerank + pipeline）、app/workflows/retrieval_check/ 自检循环、eval/ 评估框架（golden set + RAGAS）
 
 ### 重构路线（4 个 Phase）
 
@@ -221,6 +222,10 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - [x] **Phase 1** — 基础设施：prompt 外置 yaml + LLM 工厂 + repository 拆分 + workflows/_shared（已完成）
 - [x] **Phase 2** — 核心面试 LangGraph 化（**已完成 2026-07-10**）：HITL StateGraph + 去重 submit_answer + 去正则 score + 基于结构化输出 + SSE 标准化 + ai_service 切 YAML + JSON 解析兜底 + P0-2/3/4/6 已修
 - [ ] **Phase 3** — RAG 管线升级：Golden set + RAGAS baseline → BM25 + RRF + qwen3-rerank + 自检循环 LangGraph
+  - ✅ 设计 Spec：`docs/superpowers/specs/2026-07-10-phase-3-rag-upgrade-design.md`
+  - ✅ 实施计划：`docs/superpowers/plans/2026-07-10-phase-3-rag-upgrade-implementation.md`（16 tasks，20 new files + 4 modified + 2 test files）
+  - 技术选型：rank-bm25 (character bigrams) + DashScope gte-rerank + RAGAS 5 metrics
+  - **待实施**
 - [ ] **Phase 4** — 多 Agent + 可观测性：LangSmith tracing + 3 Agent 拆分（出题/评分/报告）+ Repository 补全 + RAGAS 持续评估
 
 ### Phase 1 实施记录
