@@ -145,3 +145,52 @@ class TestRRF:
         bm25 = [SearchResult(id=5, content="E", score=0.9, source="bm25")]
         result = rrf_fuse([], bm25, k=60)
         assert len(result) == 1 and result[0].id == 5
+
+
+@pytest.mark.unit
+class TestRerank:
+    """Tests for app.retrieval.rerank.cross_encoder_rerank"""
+
+    async def test_reranks_by_api_results(self, monkeypatch):
+        from app.retrieval.rerank import cross_encoder_rerank
+        from app.retrieval import SearchResult
+        candidates = [
+            SearchResult(id=1, content="doc A", score=0.9, source="both"),
+            SearchResult(id=2, content="doc B", score=0.8, source="both"),
+            SearchResult(id=3, content="doc C", score=0.7, source="vector"),
+        ]
+
+        class MockResult:
+            def __init__(self, index, relevance_score):
+                self.index = index
+                self.relevance_score = relevance_score
+
+        class MockTextReRank:
+            @staticmethod
+            def call(**kwargs):
+                resp = type("R", (), {})()
+                resp.output = type("O", (), {})()
+                resp.output.results = [MockResult(2, 0.98), MockResult(0, 0.85), MockResult(1, 0.40)]
+                return resp
+
+        monkeypatch.setattr("app.retrieval.rerank.TextReRank", MockTextReRank)
+
+        result = await cross_encoder_rerank(query="test", candidates=candidates, top_k=3)
+        assert len(result) == 3
+        assert result[0].id == 3  # doc C now first
+        assert result[0].content == "doc C"
+
+    async def test_graceful_fallback_on_api_error(self, monkeypatch):
+        from app.retrieval.rerank import cross_encoder_rerank
+        from app.retrieval import SearchResult
+        candidates = [SearchResult(id=1, content="only doc", score=0.9, source="both")]
+
+        class BrokenReRank:
+            @staticmethod
+            def call(**kwargs):
+                raise RuntimeError("API unavailable")
+
+        monkeypatch.setattr("app.retrieval.rerank.TextReRank", BrokenReRank)
+        result = await cross_encoder_rerank(query="test", candidates=candidates, top_k=1)
+        assert len(result) == 1
+        assert result[0].id == 1
