@@ -111,6 +111,12 @@ ai-interview-agent/
 
 **新功能必须**写在 `app/workflows/<name>/`（graph + nodes + service），不写在 `app/services/`（除 `auth/`、`email/` 等非 AI 业务）。
 
+**Phase 2 重构硬性规则**：
+- ❌ 禁止新增 `@staticmethod` — 新 service 用实例方法 + FastAPI Depends 注入
+- ❌ 禁止手写 `yield f"data: {json.dumps(...)}\n\n"` — SSE 用 `sse-starlette` 或 `StreamingResponse` 封装
+- ❌ 禁止 `re.search(r'\{.*"score".*\}', text)` 从 LLM 输出抠 JSON — 用 `with_structured_output(PydanticModel)` 拿强类型结果
+- ❌ 禁止 `submit_answer(stream=False)` 和 `submit_answer_stream` 分两个方法 — 合并为 `submit_answer(stream: bool = False)`
+
 ## Milvus 向量库使用规则
 
 - **唯一入口**：`app/vector_db/collections/{knowledge, question_bank}.py`
@@ -223,13 +229,20 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - CLAUDE.md 新增"LangChain / LangGraph 分工（硬性规则）"段
 
 **P1 部分遗留**（增量改进，不阻塞）：
-- ai_service 的 6 个 prompt 方法（parse_resume / analyze_resume / generate_questions / evaluate_answer / select_and_adapt / generate_with_seeds / generate_report）尚未切到 `load_prompt` — 留 Phase 2 重构 RAG 时一起做
-- 5 个 repo 只建了 1 个示例（interview_repo）— 其他 4 个（user / admin / question_bank / knowledge）留 Phase 3 增量迁移
-- ai_service 仍是 540 行 god class — 完整拆解留 Phase 3
+- ai_service 的 6 个 prompt 方法（parse_resume / analyze_resume / generate_questions / evaluate_answer / select_and_adapt / generate_with_seeds / generate_report）尚未切到 `load_prompt` — **Phase 2 做**
+- 5 个 repo 只建了 1 个示例（interview_repo）— 其他 4 个（user / admin / question_bank / knowledge）— **Phase 4 做**
+- ai_service 仍是 540 行 god class — **Phase 2 拆到 LangGraph nodes**
 
-### 已知技术债（不阻塞）
-- `services/client/ai_service.py` god class（540 行，6 套 prompt）— 等待 Phase 2-3 拆解
-- `services/client/interview_service.py` god service（660 行）— 等待 Phase 3 graph 化
+### 已知技术债（不阻塞，按 Phase 解决）
+
+- `services/client/ai_service.py` god class（540 行，6 套 prompt）— **Phase 2 拆解**
+- `services/client/interview_service.py` god service（663 行）— **Phase 2 graph 化**
+- `submit_answer` / `submit_answer_stream` 160 行重复代码 — **Phase 2 去重**
+- 流式评分用 `re.search` 正则抠分数，脆弱不可靠 — **Phase 2 用 structured output 替代**
+- `_extract_json` 解析失败抛 ValueError，评分接口 500 — **Phase 2 加兜底**
+- `app/prompts/*.yaml` 8 个文件已写好但无人使用（死代码）— **Phase 2 ai_service 切 YAML**
+- `interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock — **Phase 2 逐步去静态**
+- position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML — **Phase 4 统一**
 - bcrypt 72 字节限制（refresh token 哈希）— 待修
 - `app/schedule/celery_job.py` 死代码 — 待清理
 
