@@ -1,0 +1,202 @@
+services:
+  # FastAPI应用
+  app:
+    build: .
+    container_name: shilian-app
+    restart: unless-stopped
+    environment:
+      - ENV=production
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/api/v1/config/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Celery Worker
+  celery-worker:
+    build: .
+    container_name: shilian-celery-worker
+    restart: unless-stopped
+    command: celery -A app.core.celery_app worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - app-network
+    depends_on:
+      - redis
+      - app
+
+  # Celery Beat (调度器)
+  celery-beat:
+    build: .
+    container_name: shilian-celery-beat
+    restart: unless-stopped
+    command: celery -A app.core.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./celerybeat-schedule.db:/app/celerybeat-schedule.db
+    networks:
+      - app-network
+    depends_on:
+      - redis
+      - app
+
+  # PostgreSQL数据库（含 pgvector 扩展，用于 RAG 知识库）
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: shilian-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis缓存和消息队列
+  redis:
+    image: redis:7-alpine
+    container_name: shilian-redis
+    restart: unless-stopped
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Milvus MinIO（对象存储，standalone 模式必需）
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: shilian-minio
+    restart: unless-stopped
+    command: ["minio", "server", "/minio_data", "--console-address", ":9001"]
+    environment:
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # console
+    volumes:
+      - minio-data:/minio_data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Milvus 向量数据库（standalone 模式：embedded etcd + 外部 MinIO）
+  milvus:
+    image: milvusdb/milvus:v2.4.10
+    container_name: shilian-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    environment:
+      - DEPLOY_MODE=standalone
+      # 启用 embedded etcd
+      - ETCD_USE_EMBED=true
+      - ETCD_DATA_DIR=/var/lib/milvus/etcdData
+      # MinIO 配置（standalone 模式必需）
+      - MINIO_ADDRESS=minio
+      - MINIO_PORT=9000
+    depends_on:
+      minio:
+        condition: service_healthy
+    ports:
+      - "19530:19530"   # SDK/gRPC
+      - "9091:9091"     # metrics / health
+    volumes:
+      - milvus-data:/var/lib/milvus
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+
+  # Nginx反向代理 (默认启用)
+  nginx:
+    image: nginx:alpine
+    container_name: shilian-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./ssl:/etc/nginx/ssl
+    networks:
+      - app-network
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Flower - Celery监控(可选)
+  flower:
+    build: .
+    container_name: shilian-flower
+    restart: unless-stopped
+    command: celery -A app.core.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    networks:
+      - app-network
+    depends_on:
+      - redis
+      - celery-worker
+    profiles:
+      - monitoring
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  milvus-data:
+    driver: local
+  minio-data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

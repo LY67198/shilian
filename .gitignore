@@ -1,0 +1,70 @@
+# ───── Python ─────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ───── 虚拟环境 ─────
+venv/
+.venv/
+env/
+ENV/
+
+# ───── 敏感配置（数据库 / API Key）─────
+# .env 含真实密码，绝不提交
+.env
+# .env.example 是模板，可以提交
+
+# ───── 运行时数据 / 日志 ─────
+logs/
+*.log
+uploads/
+celerybeat-schedule.db
+
+# ───── Node / 前端 ─────
+node_modules/
+dist/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ───── IDE / OS ─────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ───── Docker / Compose 临时 ─────
+docker-compose.override.yml
+
+# ───── 私有文档（不公开） ─────
+# 内部规划与 AI 协作记忆
+CLAUDE.md
+部署教程.md
+docs/
+# 项目内部参考文档（个人整理，非公开）
+AI应用工程化能力.md
+AI面试项目问答清单.md
+工程化能力.md
+面试要点.md
+项目RAG实现原理.md
+# 后台演示用资源
+题库和知识库文档（用于后台上传）/
+项目截图/
+
+# ───── 杂项 ─────
+*.bak
+*.swp
+*.tmp
+.history/
