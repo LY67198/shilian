@@ -119,6 +119,14 @@ class Settings(BaseSettings):
     QUESTION_BANK_RECALL_FACTOR: int = 2
     QUESTION_BANK_TOP_K: int = 20
 
+    # ============= Phase 3: Hybrid Retrieval =============
+    DASHSCOPE_RERANK_MODEL: str = "gte-rerank"
+    RRF_K: int = 60
+    BM25_TOP_K: int = 20
+    VECTOR_TOP_K: int = 20
+    RERANK_TOP_K: int = 10
+    SELF_CHECK_MAX_RETRIES: int = 2
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"  # 可选，指定编码
