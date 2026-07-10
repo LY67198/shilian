@@ -1,9 +1,11 @@
-"""Interview 数据访问层（Phase 3 完整迁移，Phase 1 仅建骨架）"""
+"""Interview 数据访问层"""
 from __future__ import annotations
 
-from typing import List, Optional
+import decimal
+import json
+from typing import Any, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.interview import Interview
@@ -29,6 +31,20 @@ class InterviewRepository(BaseRepository[Interview]):
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_by_id_for_user(
+        self,
+        db: AsyncSession,
+        interview_id: int,
+        user_id: int,
+    ) -> Optional[Interview]:
+        """按 id + user_id 查面试记录（含归属权校验）"""
+        stmt = select(Interview).where(
+            Interview.id == interview_id,
+            Interview.user_id == user_id,
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_messages(
         self,
         db: AsyncSession,
@@ -39,6 +55,20 @@ class InterviewRepository(BaseRepository[Interview]):
             select(InterviewMessage)
             .where(InterviewMessage.interview_id == interview_id)
             .order_by(InterviewMessage.id)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_scored_messages(
+        self,
+        db: AsyncSession,
+        interview_id: int,
+    ) -> List[InterviewMessage]:
+        """获取已评分的候选人消息"""
+        stmt = select(InterviewMessage).where(
+            InterviewMessage.interview_id == interview_id,
+            InterviewMessage.role == "candidate",
+            InterviewMessage.score.isnot(None),
         )
         result = await db.execute(stmt)
         return list(result.scalars().all())
@@ -54,6 +84,55 @@ class InterviewRepository(BaseRepository[Interview]):
         if 0 <= idx < len(questions):
             return questions[idx]
         return None
+
+    async def update_question_index(
+        self,
+        db: AsyncSession,
+        interview_id: int,
+        next_index: int,
+    ) -> None:
+        """更新当前题目索引"""
+        await db.execute(
+            sql_update(Interview)
+            .where(Interview.id == interview_id)
+            .values(current_question_index=next_index)
+        )
+
+    async def update_result(
+        self,
+        db: AsyncSession,
+        interview_id: int,
+        overall_score: float,
+        report: dict[str, Any],
+    ) -> None:
+        """写入面试最终结果"""
+        await db.execute(
+            sql_update(Interview)
+            .where(Interview.id == interview_id)
+            .values(
+                status="completed",
+                overall_score=decimal.Decimal(str(overall_score)),
+                report=json.dumps(report, ensure_ascii=False),
+            )
+        )
+
+    async def create_message(
+        self,
+        db: AsyncSession,
+        interview_id: int,
+        role: str,
+        content: str,
+        question_index: int = -1,
+    ) -> InterviewMessage:
+        """创建面试消息"""
+        msg = InterviewMessage(
+            interview_id=interview_id,
+            role=role,
+            content=content,
+            question_index=question_index,
+        )
+        db.add(msg)
+        return msg
 
 
 # 默认单例

@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = settings.MILVUS_COLLECTION_QUESTION_BANK  # "question_bank"
 
 
+def _escape_filter_string(value: str) -> str:
+    """安全转义 Milvus filter 表达式中的字符串值
+
+    Milvus 表达式使用双引号括字符串，特殊字符需转义：
+    - "  → \" （防止提前闭合）
+    - \  → \\ （反斜杠本身）
+    - LIKE 通配符 % / _ 前加 \\ 避免被当作模式匹配
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return escaped
+
+
 def get_schema(dim: int) -> CollectionSchema:
     fields = [
         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
@@ -108,9 +120,11 @@ def search(
     """向量检索（支持 position_tag / difficulty 过滤）"""
     filters = []
     if position_tag:
-        filters.append(f'position_tag like "%{position_tag}%"')
+        safe_tag = _escape_filter_string(position_tag)
+        filters.append(f'position_tag like "%{safe_tag}%"')
     if difficulty:
-        filters.append(f'difficulty == "{difficulty}"')
+        safe_diff = _escape_filter_string(difficulty)
+        filters.append(f'difficulty == "{safe_diff}"')
     filter_expr = " and ".join(filters) if filters else ""
 
     results = client.search(

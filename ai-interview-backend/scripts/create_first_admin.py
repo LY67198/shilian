@@ -13,7 +13,7 @@ sys.path.insert(0, str(project_root))
 from app.db.base import get_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.admin import Admin
+from app.models.admin import Admin, UserRole
 
 
 async def create_first_admin():
@@ -44,7 +44,7 @@ async def create_first_admin():
             first_name=first_name,
             last_name=last_name,
             password=hashed_password,
-            role="superadmin",
+            role=UserRole.SUPERADMIN,
             is_active=True
         )
 

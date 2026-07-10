@@ -1,3 +1,6 @@
+# DEPRECATED: 此文件不再使用。setup_scheduler() 无人调用，
+# Celery Beat 已接管定时任务调度。保留文件以备将来参考，不应引入新代码。
+
 import logging
 import os
 import tempfile

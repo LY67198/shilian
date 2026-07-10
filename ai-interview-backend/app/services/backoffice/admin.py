@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
-from app.models.admin import Admin
+from app.models.admin import Admin, UserRole
 from app.schemas.backoffice.admin import AdminCreate, AdminResponse
 from app.exceptions.http_exceptions import APIException
 from typing import List, Optional
@@ -22,14 +22,14 @@ class AdminService:
             )
         
         # 创建新管理员
-        hashed_password = AuthBase.hash_token(admin_data.password)
+        hashed_password = AuthBase.get_password_hash(admin_data.password)
         admin = Admin(
             email=admin_data.email,
             first_name=admin_data.first_name,
             last_name=admin_data.last_name,
             password=hashed_password,
             is_active=admin_data.is_active,
-            role="superadmin"
+            role=UserRole.SUPERADMIN,
         )
         
         db.add(admin)
@@ -125,7 +125,7 @@ class AdminService:
         
         # 如果有密码更新，需要哈希处理
         if "password" in admin_data:
-            update_data["password"] = AuthBase.hash_token(admin_data["password"])
+            update_data["password"] = AuthBase.get_password_hash(admin_data["password"])
 
         # 更新名字
         if "first_name" in admin_data:
@@ -185,19 +185,19 @@ class AdminService:
             return False
         
         # 验证当前密码
-        if not AuthBase.verify_token_hash(current_password, admin.password):
+        if not AuthBase.verify_password(current_password, admin.password):
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Current password is incorrect"
             )
         
         # 更新密码
-        hashed_password = AuthBase.hash_token(new_password)
+        hashed_password = AuthBase.get_password_hash(new_password)
         stmt = update(Admin).where(Admin.id == admin_id).values(password=hashed_password)
         await db.execute(stmt)
-        
+
         return True
-    
+
     @staticmethod
     async def reset_password(db: AsyncSession, admin_id: int, new_password: str) -> bool:
         """重置管理员密码（仅管理员本人和超管可操作）"""
@@ -205,12 +205,12 @@ class AdminService:
         admin_query = select(Admin).where(Admin.id == admin_id)
         result = await db.execute(admin_query)
         admin = result.scalar_one_or_none()
-        
+
         if not admin:
             return False
-        
+
         # 更新密码
-        hashed_password = AuthBase.hash_token(new_password)
+        hashed_password = AuthBase.get_password_hash(new_password)
         stmt = update(Admin).where(Admin.id == admin_id).values(password=hashed_password)
         await db.execute(stmt)
         

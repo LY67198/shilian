@@ -13,9 +13,9 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain_core.messages import ToolMessage, AIMessage
 
+from app.common.json_utils import extract_json
 from app.core.config import settings
 from app.llm import get_chat_llm
-from app.services.client.ai_service import AIService
 from app.services.client.position_agent_tools import POSITION_AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -153,13 +153,20 @@ class PositionAgentService:
             }
 
         # 提取最终输出（最后一条消息的 content）
-        final_message = response["messages"][-1]
+        messages = response.get("messages", [])
+        if not messages:
+            logger.error("[PositionAgent] Agent 返回空消息列表")
+            return {
+                "result": {"error": "Agent 未返回任何消息"},
+                "intermediate_steps": [],
+            }
+        final_message = messages[-1]
         raw_output = final_message.content if hasattr(final_message, "content") else str(final_message)
         logger.info(f"[PositionAgent] 完成，raw_output 长度: {len(raw_output)}")
 
         # 解析最终 JSON
         try:
-            result = AIService._extract_json(raw_output)
+            result = extract_json(raw_output)
         except Exception as e:
             logger.error(f"[PositionAgent] 输出 JSON 解析失败: {e}, raw: {raw_output[:300]}")
             result = {

@@ -1,12 +1,14 @@
-from sqlalchemy import Boolean, Column, Integer, String, Enum
-from .base import BaseModel
-from passlib.context import CryptContext
+import enum
+
+from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.core.security import pwd_context
+from .base import BaseModel
 
 
-class UserRole(str, Enum):
+class UserRole(str, enum.Enum):
     ADMIN = "admin"
     SUPERADMIN = "superadmin"
 
@@ -15,7 +17,12 @@ class Admin(BaseModel):
     __tablename__ = "admins"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    role = Column(String(20), default=UserRole.ADMIN, nullable=False)
+    role = Column(
+        SAEnum(UserRole, name="userrole", create_type=True),
+        default=UserRole.ADMIN,
+        server_default="ADMIN",
+        nullable=False,
+    )
     email = Column(String(255), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)

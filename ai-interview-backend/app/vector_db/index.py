@@ -71,7 +71,7 @@ def ensure_index(
             collection_name=collection_name,
             index_params=build_index_params(field_name=field_name),
         )
-        logger.info(f"索引已创建: {collection_name}.{field_name} (HNSW, COSINE)")
+        logger.info(f"索引已创建: {collection_name}.{field_name} (HNSW, L2)")
     except Exception as e:
         # 索引已存在时 Milvus 抛异常，幂等处理
         if "already" in str(e).lower() or "exist" in str(e).lower():

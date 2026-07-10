@@ -39,6 +39,17 @@ ai-interview-agent/
 │   │   ├── models/                # SQLAlchemy 模型（**embedding 列已迁出**）
 │   │   ├── schemas/               # Pydantic 请求/响应模型
 │   │   ├── services/              # 业务逻辑（auth/email/redis_verification 等）
+│   │   ├── llm/                   # 🆕 LangChain 原子能力（LLM/Embedding/Prompt 工厂）
+│   │   ├── prompts/               # 🆕 PromptTemplate YAML 集中管理（8 个文件）
+│   │   ├── repositories/          # 🆕 Repository Pattern 数据访问层
+│   │   ├── workflows/             # 🆕 LangGraph 编排层
+│   │   │   └── _shared/           # 共享基础设施（checkpointer/state/tracing/llm/tools/sse）
+│   │   │       └── sse.py         # astream_to_sse() LangGraph → SSE 封装
+│   │   │   ├── interview/         # ✅ Phase 2 面试评估（HITL StateGraph）
+│   │   │   │   ├── nodes/         # fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report
+│   │   │   │   ├── state.py       # InterviewState + ScoreResult
+│   │   │   │   ├── graph.py       # build_interview_graph() + get_compiled_graph()
+│   │   │   │   └── service.py     # InterviewGraphService.submit_answer() 单一入口
 │   │   ├── vector_db/             # 🆕 Milvus 客户端 + collections schema + CRUD
 │   │   │   ├── client.py          # MilvusClient 单例 + health_check
 │   │   │   ├── index.py           # HNSW + L2 索引配置
@@ -116,6 +127,9 @@ ai-interview-agent/
 - ❌ 禁止手写 `yield f"data: {json.dumps(...)}\n\n"` — SSE 用 `sse-starlette` 或 `StreamingResponse` 封装
 - ❌ 禁止 `re.search(r'\{.*"score".*\}', text)` 从 LLM 输出抠 JSON — 用 `with_structured_output(PydanticModel)` 拿强类型结果
 - ❌ 禁止 `submit_answer(stream=False)` 和 `submit_answer_stream` 分两个方法 — 合并为 `submit_answer(stream: bool = False)`
+- ❌ 禁止手写 `yield f"data: {json.dumps(...)}\n\n"` — SSE 用 `app/workflows/_shared/sse.py:astream_to_sse()` 封装
+- ❌ 禁止 `isinstance(llm_output, AIMessage)` 后取 `.content` 再 `json.loads()` — 评分节点用 `with_structured_output(PydanticModel)` 拿强类型结果
+- ❌ 禁止 `_extract_json` 抛 `ValueError` — 已改为返回带 `parse_failed: True` 的 fallback dict
 
 ## Milvus 向量库使用规则
 
@@ -197,16 +211,17 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - 面试会话消息独立建模（`interview_message`），支撑多轮上下文
 - 品牌升级："AI Interview" → "试炼 (MockPilot)"，容器名 / PROJECT_NAME / 前端 title 全部更新
 - **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
+- **Phase 2 实施完成**（2026-07-10）：核心面试 LangGraph 化 + 4 个 P0 bug 修复 + YAML prompt 激活 + JSON 解析兜底
 
 ### 重构路线（4 个 Phase）
 
 > 路线图于 2026-07-10 重排，详见 `docs/superpowers/specs/2026-07-10-phase-2-4-roadmap-redesign.md`
 
-- [x] **Phase 0** — 修 7 个 bug + service 迁 Milvus（已完成）
+- [x] **Phase 0** — Milvus 迁 service + 导出名修正（P0-1/P0-7 已完成；P0-2~P0-6 4 个 bug 遗留至 Phase 2，见下方"P0 遗留"）
 - [x] **Phase 1** — 基础设施：prompt 外置 yaml + LLM 工厂 + repository 拆分 + workflows/_shared（已完成）
-- [ ] **Phase 2** — 核心面试 LangGraph 化：去重 submit_answer + 面试 StateGraph + 去正则 score + 基于结构化输出 + SSE 标准化 + ai_service 切 YAML + JSON 解析兜底
+- [x] **Phase 2** — 核心面试 LangGraph 化（**已完成 2026-07-10**）：HITL StateGraph + 去重 submit_answer + 去正则 score + 基于结构化输出 + SSE 标准化 + ai_service 切 YAML + JSON 解析兜底 + P0-2/3/4/6 已修
 - [ ] **Phase 3** — RAG 管线升级：Golden set + RAGAS baseline → BM25 + RRF + qwen3-rerank + 自检循环 LangGraph
-- [ ] **Phase 4** — 多 Agent + 可观测性：LangFuse tracing + 3 Agent 拆分（出题/评分/报告）+ Repository 补全 + RAGAS 持续评估
+- [ ] **Phase 4** — 多 Agent + 可观测性：LangSmith tracing + 3 Agent 拆分（出题/评分/报告）+ Repository 补全 + RAGAS 持续评估
 
 ### Phase 1 实施记录
 
@@ -228,26 +243,39 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - `services/common/embedding.py` 改为 deprecation stub
 - CLAUDE.md 新增"LangChain / LangGraph 分工（硬性规则）"段
 
-**P1 部分遗留**（增量改进，不阻塞）：
-- ai_service 的 6 个 prompt 方法（parse_resume / analyze_resume / generate_questions / evaluate_answer / select_and_adapt / generate_with_seeds / generate_report）尚未切到 `load_prompt` — **Phase 2 做**
+### Phase 2 实施记录
+
+**P0 Bug 修复**：
+| Bug | 修改 |
+|-----|------|
+| P0-2 | `core/security.py` — token 哈希 bcrypt → SHA-256 + hmac.compare_digest；新增 `get_password_hash` / `verify_password` 方法；Alembic 清空旧 token |
+| P0-3 | `models/admin.py` — `Admin.role` String(20) → `SAEnum(UserRole)` + Alembic 迁移 |
+| P0-4 | `admin.py`/`user.py`/`security.py` — 三份 CryptContext 合并到 `security.py` 全局 `pwd_context` 单例 |
+| P0-6 | `schedule/celery_job.py` — 顶部标记 DEPRECATED |
+
+**核心重构**：
+- `_extract_json` — 解析失败不抛 ValueError，返回 `{"score": 5.0, "parse_failed": True}` 兜底
+- `app/workflows/_shared/sse.py` — `astream_to_sse()` 封装，映射 LangGraph `astream_events` → SSE 标准事件
+- `app/workflows/interview/` — 6 个 nodes（fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report）+ StateGraph HITL 模式（`interrupt_after=["ask_question"]`）+ `InterviewGraphService.submit_answer(stream=True/False)` 单一入口
+- `app/api/client/v1/interview.py` — `/answer` 和 `/answer/stream` 端点全部走 graph service
+- `ai_service.py` — 5 个出题方法（parse_resume / analyze_resume / generate_questions / select_and_adapt / generate_with_seeds）切 YAML `load_prompt()`；删除 evaluate_answer / evaluate_answer_stream / generate_report（已迁到 graph nodes）
+- `interview_service.py` — 删除 submit_answer / submit_answer_stream（~320 行），保留 start / get_report / get_messages / get_interviews / delete
+
+**代码量**：`ai_service.py` 485→230 行，`interview_service.py` 663→320 行，新增 `workflows/interview/` ~350 行。
+
+**P1 遗留更新**（增量改进，不阻塞）：
 - 5 个 repo 只建了 1 个示例（interview_repo）— 其他 4 个（user / admin / question_bank / knowledge）— **Phase 4 做**
-- ai_service 仍是 540 行 god class — **Phase 2 拆到 LangGraph nodes**
 
 ### 已知技术债（不阻塞，按 Phase 解决）
 
-- `services/client/ai_service.py` god class（540 行，6 套 prompt）— **Phase 2 拆解**
-- `services/client/interview_service.py` god service（663 行）— **Phase 2 graph 化**
-- `submit_answer` / `submit_answer_stream` 160 行重复代码 — **Phase 2 去重**
-- 流式评分用 `re.search` 正则抠分数，脆弱不可靠 — **Phase 2 用 structured output 替代**
-- `_extract_json` 解析失败抛 ValueError，评分接口 500 — **Phase 2 加兜底**
-- `app/prompts/*.yaml` 8 个文件已写好但无人使用（死代码）— **Phase 2 ai_service 切 YAML**
-- `interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock — **Phase 2 逐步去静态**
+- `interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock — **Phase 3+ 逐步去静态**
 - position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML — **Phase 4 统一**
-- bcrypt 72 字节限制（refresh token 哈希）— 待修
-- `app/schedule/celery_job.py` 死代码 — 待清理
+- Graph nodes 通过 `state.custom.db` 传 DB session，非标准 DI — **Phase 3+ 改用 FastAPI Depends 注入**
 
 ### Milvus 关键 bug 已修（Phase 0-1）
 - ✅ service 层不再调已删除的 `KnowledgeChunk.embedding.cosine_distance` 列
 - ✅ 创建/更新/删除都双写 PG + Milvus
 - ✅ `pgvector` import 已从 model 移除
 - ✅ API 层 `_to_response` 不再访问 `q.embedding`
+- ✅ Milvus filter 字符串注入已修（`question_bank._escape_filter_string` 转义，2026-07-10）
+- ✅ `vector_db/index.py` ensure_index 日志消息 COSINE → L2 修正（2026-07-10）
