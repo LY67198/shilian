@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
-from app.services.common.embedding import embed_text, embed_texts
+from app.llm.embedding import embed_text, embed_texts
 from app.vector_db import get_milvus_client
 from app.vector_db.collections import knowledge as knowledge_vdb
 from app.vector_db.collections.knowledge import KnowledgeChunkPayload

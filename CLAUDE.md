@@ -94,6 +94,23 @@ ai-interview-agent/
 - **路由统一注册**：所有路由通过 `app/route/router_registry.py` 集中管理
 - **测试在容器内跑**：dev compose 把 `./tests` 和 `./pytest.ini` 挂进 `ai-interview-app`
 
+## LangChain / LangGraph 分工（硬性规则）
+
+| 层级 | 职责 | 位置 |
+|------|------|------|
+| **LangChain**（原子能力） | LLM / Embedding / @tool / Message / PromptTemplate | `app/llm/`, `app/prompts/` |
+| **LangGraph**（编排） | 多步骤流程、StateGraph、Agent 决策、条件分支、Checkpointer | `app/workflows/` |
+| **Node 纯函数** | 业务逻辑，可独立测试，调用 repo + llm | `app/workflows/<name>/nodes/` |
+| **Repository** | 纯 DB CRUD，不调 LLM / Milvus / HTTPException | `app/repositories/` |
+
+**禁止**：
+- ❌ 业务代码里直接 `from openai import OpenAI` — 用 `app.llm.get_chat_llm()`
+- ❌ Prompt 写在 Python 代码里 — 用 `app.prompts/*.yaml` + `load_prompt()`
+- ❌ 业务 service 里手动管 LangGraph state — 让 `app/workflows/_shared/` 接管
+- ❌ 节点函数里直接写 SQL — 用 `app/repositories/`
+
+**新功能必须**写在 `app/workflows/<name>/`（graph + nodes + service），不写在 `app/services/`（除 `auth/`、`email/` 等非 AI 业务）。
+
 ## Milvus 向量库使用规则
 
 - **唯一入口**：`app/vector_db/collections/{knowledge, question_bank}.py`

@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.question_bank import QuestionBank
-from app.services.common.embedding import embed_text, embed_texts
+from app.llm.embedding import embed_text, embed_texts
 from app.vector_db import get_milvus_client
 from app.vector_db.collections import question_bank as question_vdb
 from app.vector_db.collections.question_bank import QuestionPayload

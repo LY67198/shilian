@@ -1,97 +1,42 @@
 import json
 import logging
 import re
-import asyncio
 from typing import Dict, List, Optional
-from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, RateLimitError, InternalServerError
-from app.core.config import settings
+
+from app.llm import chat_completion
 
 logger = logging.getLogger(__name__)
 
-# DeepSeek 使用 OpenAI 兼容 API
-client = AsyncOpenAI(
-    api_key=settings.DEEPSEEK_API_KEY,
-    base_url=settings.DEEPSEEK_BASE_URL
-)
-
-# 重试配置
-_MAX_RETRIES = 3
-_RETRY_DELAYS = [1, 2, 4]  # 指数退避（秒）
-
-_RETRYABLE_ERRORS = (
-    APIConnectionError,
-    APITimeoutError,
-    RateLimitError,
-    InternalServerError,
-    asyncio.TimeoutError,
-)
-
 
 class AIService:
-    """DeepSeek AI 服务 - 面试模拟核心"""
+    """DeepSeek AI 服务 - 面试模拟核心
+
+    Phase 1 重构后 LLM 调用委托给 app.llm.chat_completion，
+    旧 _chat / _chat_stream 保留为薄封装，避免改全部业务方法。
+    """
 
     @staticmethod
     async def _chat(messages: list, temperature: float = 0.7) -> str:
-        """基础对话补全调用（带指数退避重试，仅对瞬态错误重试）"""
-        last_exc = None
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                response = await client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=2000
-                )
-                return response.choices[0].message.content.strip()
-            except _RETRYABLE_ERRORS as e:
-                last_exc = e
-                if attempt < _MAX_RETRIES:
-                    delay = _RETRY_DELAYS[attempt]
-                    logger.warning(f"DeepSeek 调用失败（第{attempt + 1}/{_MAX_RETRIES}次重试），{delay}s 后重试: {e}")
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(f"DeepSeek API 调用彻底失败（已重试{_MAX_RETRIES}次）: {e}")
-            except Exception as e:
-                logger.error(f"DeepSeek API 调用失败（不可重试错误）: {e}")
-                raise
-        raise last_exc
+        """基础对话补全（委托给 app.llm.chat_completion）"""
+        return await chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=2000,
+            stream=False,
+        )
 
     @staticmethod
     async def _chat_stream(messages: list, temperature: float = 0.7):
-        """流式对话补全调用，逐块返回文本（连接建立带退避重试）"""
-        stream = None
-        last_exc = None
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                stream = await client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=2000,
-                    stream=True
-                )
-                break
-            except _RETRYABLE_ERRORS as e:
-                last_exc = e
-                if attempt < _MAX_RETRIES:
-                    delay = _RETRY_DELAYS[attempt]
-                    logger.warning(f"DeepSeek 流式连接失败（第{attempt + 1}/{_MAX_RETRIES}次重试），{delay}s 后重试: {e}")
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(f"DeepSeek 流式 API 连接彻底失败（已重试{_MAX_RETRIES}次）: {e}")
-            except Exception as e:
-                logger.error(f"DeepSeek 流式 API 调用失败（不可重试错误）: {e}")
-                raise
-        if stream is None:
-            raise last_exc
+        """流式对话补全（委托给 app.llm.chat_completion）"""
+        gen = await chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=2000,
+            stream=True,
+        )
+        async for chunk in gen:
+            yield chunk
 
-        try:
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        except Exception as e:
-            logger.error(f"DeepSeek 流式输出中断: {e}")
-            raise
 
     @staticmethod
     def _extract_json(text: str):

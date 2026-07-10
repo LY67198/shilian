@@ -14,28 +14,22 @@ from langchain.agents import create_agent
 from langchain_core.messages import ToolMessage, AIMessage
 
 from app.core.config import settings
+from app.llm import get_chat_llm
 from app.services.client.ai_service import AIService
 from app.services.client.position_agent_tools import POSITION_AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
 
 
-# ── LLM 配置 ────────────────────────────────────────────────────────────
-
-_llm: ChatOpenAI | None = None
+# ── LLM 配置（委托 app.llm.get_chat_llm 统一管理）────────────────
 
 def get_llm() -> ChatOpenAI:
-    """单例 ChatOpenAI 实例（包装 DeepSeek）"""
-    global _llm
-    if _llm is None:
-        _llm = ChatOpenAI(
-            model=settings.DEEPSEEK_MODEL,
-            api_key=settings.DEEPSEEK_API_KEY,
-            base_url=settings.DEEPSEEK_BASE_URL,
-            temperature=0.3,
-            timeout=120,
-        )
-    return _llm
+    """ChatOpenAI 实例（包装 DeepSeek）
+
+    Phase 1 重构后委托给 app.llm.get_chat_llm 统一管理，
+    旧签名保留只为不破坏外部 import。
+    """
+    return get_chat_llm(temperature=0.3)
 
 
 # ── 系统 Prompt ─────────────────────────────────────────────────────────

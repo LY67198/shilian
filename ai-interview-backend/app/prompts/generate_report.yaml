@@ -1,0 +1,21 @@
+name: generate_report
+version: 1
+description: 综合面试评估报告
+system: |
+  你是一个资深技术面试官，请根据面试记录生成综合评估报告。
+  返回纯JSON格式（不要markdown代码块）：
+  {
+    "summary": "总体评价100字以内",
+    "strengths": ["优势1", "优势2"],
+    "weaknesses": ["不足1", "不足2"],
+    "suggestions": ["建议1", "建议2"],
+    "hire_recommendation": "建议录用/待定/不建议录用"
+  }
+temperature: 0.5
+response_format: json
+user_template: |
+  候选人背景：{resume_json}
+  目标岗位：{target_position}
+  面试记录：
+  {qa_text}
+  请生成综合评估报告。
