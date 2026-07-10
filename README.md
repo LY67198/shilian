@@ -17,24 +17,31 @@ AI 评分 — 参考答案 + 知识库片段注入评分 Prompt，减少幻觉
 知识库管理 — PDF / MD 文档上传、向量化、检索测试（管理员）
 账号体系 — 用户端邮箱注册 + 验证码；后台管理员 JWT 鉴权
 登录限流 — Redis 滑动窗口防暴力破解（5 分钟最多 5 次）
-全链路追踪 — LangSmith 可观测（可选接入）
+RAG 质量评估 — RAGAS 离线指标（faithfulness / answer_relevancy / context_precision / context_recall）+ golden set 回归
+全链路追踪 — LangSmith 节点级 trace（可选接入）
 
 ## 技术栈
 
 | 层级 | 技术 | 用途 |
 |------|------|------|
 | 后端框架 | FastAPI 0.115 | RESTful API + SSE 流式 |
-| 数据库 | PostgreSQL 16 | 主业务数据 |
+| 数据校验 | Pydantic 2.11 | 请求 / 响应模型 + Settings |
+| 数据库 | PostgreSQL 16 | 主业务数据 + LangGraph Checkpoint |
 | 向量数据库 | Milvus 2.4.10 | RAG 文档 / 题库嵌入与检索 |
+| 向量索引 | HNSW + COSINE | 1024 维向量近似最近邻 |
 | 对象存储 | MinIO | Milvus standalone 内部存储 |
 | 缓存 / 锁 | Redis 7 | 登录限流 + Celery Broker |
-| 缓存 | Celery 5.5 | 邮件 / 验证码发送 |
+| 异步任务 | Celery 5.5 | 邮件 / 验证码发送 |
 | Agent | LangChain 1.3 | 工具调用 + create_agent |
 | 编排 | LangGraph 1.2.8 | 多轮面试 StateGraph |
-| 检索 | 向量召回 + RRF | 题库 + 知识库 |
+| 检索 | 向量召回 + RRF + qwen3-rerank | 题库 + 知识库四路召回精排 |
+| 状态持久化 | langgraph-checkpoint-postgres 3.1.0 | AsyncPostgresSaver 存图状态 |
 | 嵌入 | DashScope text-embedding-v3 | 1024 维向量 |
-| LLM | DeepSeek | 推理（OpenAI 兼容） |
 | 重排 | DashScope qwen3-rerank | 召回结果精排 |
+| LLM | DeepSeek | 推理（OpenAI 兼容 SDK 2.x） |
+| 认证 | python-jose + passlib (bcrypt) | JWT 签发 / 校验 / 密码哈希 |
+| 评估 | RAGAS | RAG 质量量化（faithfulness / answer_relevancy / context_precision / context_recall） |
+| 可观测 | LangSmith | LangGraph 节点级 trace（可选） |
 | 前端 | Vue 3 + Vite 5 + Pinia | 用户端 + 管理端 |
 | 构建 | Vite | 前端工程化 |
 | 部署 | Docker Compose | 7 容器一键启动 |
@@ -97,6 +104,18 @@ curl http://localhost:8006/api/v1/config/health
 # 管理端：http://localhost:8006/backoffice/docs
 ```
 
+### 5. RAG 质量评估（可选）
+
+```bash
+# 一次性跑 baseline
+docker exec shilian-app python scripts/eval_ragas.py \
+  --golden-set eval/golden_set.json \
+  --output eval/reports/baseline-$(date +%Y%m%d).json
+
+# 报告包含 4 个指标：faithfulness / answer_relevancy /
+# context_precision / context_recall
+```
+
 ## 项目结构
 
 ```
@@ -129,6 +148,7 @@ ai-interview-agent/
 │   ├── tests/                        # pytest
 │   ├── migrations/                   # Alembic
 │   ├── scripts/                      # 初始化脚本
+│   ├── eval/                         # RAGAS 离线评估（golden set + 报告）
 │   └── docker-compose*.yml
 ├── ai-interview-frontend/            # 用户端 (Vue 3 + Vite)
 ├── ai-interview-admin/               # 管理端 (Vue 3 + Element Plus)
@@ -186,6 +206,17 @@ ai-interview-agent/
 ### 端到端可观测
 
 LangSmith 全链路 trace、SSE 实时推送节点切换事件、structured output 替代正则解析 score。LLM 调用、向量召回、节点耗时全程可追溯，调试 production 召回质量时不用猜。
+
+### RAG 质量评估体系
+
+基于 [RAGAS](https://github.com/explodinggradients/ragas) 框架的离线评估流水线，4 个核心指标：
+
+- **faithfulness** — 答案相对召回内容的忠实度（防幻觉）
+- **answer_relevancy** — 答案与 query 的相关度
+- **context_precision** — 召回结果中真正相关的占比
+- **context_recall** — 理想答案被召回到的比例
+
+配套 `eval/golden_set.json` 手工标注集（20-30 条覆盖各 difficulty × position_tag），每次改 RAG 相关代码（retrieval / vector_db / prompt）跑一次评估，diff > 5% 阻断 merge。所有 baseline 数字存 `eval/reports/baseline-{date}.json`，后续 Phase 2 加 hybrid + RRF + rerank 后可对比看提升。
 
 ### 工业级工程化
 
