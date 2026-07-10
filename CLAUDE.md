@@ -193,11 +193,14 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
 
 ### 重构路线（4 个 Phase）
+
+> 路线图于 2026-07-10 重排，详见 `docs/superpowers/specs/2026-07-10-phase-2-4-roadmap-redesign.md`
+
 - [x] **Phase 0** — 修 7 个 bug + service 迁 Milvus（已完成）
 - [x] **Phase 1** — 基础设施：prompt 外置 yaml + LLM 工厂 + repository 拆分 + workflows/_shared（已完成）
-- [ ] **Phase 2** — 完整 RAG 管线：BM25 + RRF + qwen3-rerank + 自检循环 LangGraph
-- [ ] **Phase 3** — 多轮面试 LangGraph 化 + SSE 流式 + 干掉正则解析 score
-- [ ] **Phase 4** — RAGAS 评估 + golden set + 多 Agent + LangSmith
+- [ ] **Phase 2** — 核心面试 LangGraph 化：去重 submit_answer + 面试 StateGraph + 去正则 score + 基于结构化输出 + SSE 标准化 + ai_service 切 YAML + JSON 解析兜底
+- [ ] **Phase 3** — RAG 管线升级：Golden set + RAGAS baseline → BM25 + RRF + qwen3-rerank + 自检循环 LangGraph
+- [ ] **Phase 4** — 多 Agent + 可观测性：LangFuse tracing + 3 Agent 拆分（出题/评分/报告）+ Repository 补全 + RAGAS 持续评估
 
 ### Phase 1 实施记录
 
