@@ -109,3 +109,39 @@ class TestBM25Index:
         idx = BM25Index("test")
         tokens = idx._tokenize("hello world")
         assert len(tokens) > 0
+
+
+@pytest.mark.unit
+class TestRRF:
+    def test_merges_and_ranks_by_rrf(self):
+        from app.retrieval.rrf import rrf_fuse
+        from app.retrieval import SearchResult
+        vector = [
+            SearchResult(id=1, content="A", score=0.9, source="vector"),
+            SearchResult(id=2, content="B", score=0.7, source="vector"),
+            SearchResult(id=3, content="C", score=0.5, source="vector"),
+        ]
+        bm25 = [
+            SearchResult(id=2, content="B", score=0.8, source="bm25"),
+            SearchResult(id=3, content="C", score=0.6, source="bm25"),
+            SearchResult(id=4, content="D", score=0.4, source="bm25"),
+        ]
+        result = rrf_fuse(vector, bm25, k=60)
+        assert result[0].id == 2  # appears in both → boosted → first
+        assert result[0].source == "both"
+        assert len(result) == 4
+        assert {r.id for r in result} == {1, 2, 3, 4}
+
+    def test_empty_bm25_returns_vector_only(self):
+        from app.retrieval.rrf import rrf_fuse
+        from app.retrieval import SearchResult
+        vector = [SearchResult(id=1, content="A", score=0.9, source="vector")]
+        result = rrf_fuse(vector, [], k=60)
+        assert len(result) == 1 and result[0].id == 1
+
+    def test_empty_vector_returns_bm25_only(self):
+        from app.retrieval.rrf import rrf_fuse
+        from app.retrieval import SearchResult
+        bm25 = [SearchResult(id=5, content="E", score=0.9, source="bm25")]
+        result = rrf_fuse([], bm25, k=60)
+        assert len(result) == 1 and result[0].id == 5
