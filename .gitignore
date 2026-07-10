@@ -68,3 +68,13 @@ AI面试项目问答清单.md
 *.swp
 *.tmp
 .history/
+
+# ───── 体积过大的二进制 / 下载文件 ─────
+# docker-compose Linux x86_64 静态二进制（58MB），不属于源码
+docker-compose-linux-x86_64
+docker-compose-linux-*
+*.zip
+*.tar.gz
+*.tgz
+node_modules/.cache/
+.ai-interview-backend/resources/
