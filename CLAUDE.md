@@ -190,18 +190,44 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - 验证码服务 (`redis_verification.py`) + 候补名单 (`waiting_list`)，客户端/后台均挂路由
 - 面试会话消息独立建模（`interview_message`），支撑多轮上下文
 - 品牌升级："AI Interview" → "试炼 (MockPilot)"，容器名 / PROJECT_NAME / 前端 title 全部更新
+- **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
 
-### 重构路线（4 个待实施 Phase）
-- [ ] **Phase 1** — 基础设施：prompt 外置 yaml + LLM 工厂 + repository 拆分 + workflows/_shared
+### 重构路线（4 个 Phase）
+- [x] **Phase 0** — 修 7 个 bug + service 迁 Milvus（已完成）
+- [x] **Phase 1** — 基础设施：prompt 外置 yaml + LLM 工厂 + repository 拆分 + workflows/_shared（已完成）
 - [ ] **Phase 2** — 完整 RAG 管线：BM25 + RRF + qwen3-rerank + 自检循环 LangGraph
 - [ ] **Phase 3** — 多轮面试 LangGraph 化 + SSE 流式 + 干掉正则解析 score
 - [ ] **Phase 4** — RAGAS 评估 + golden set + 多 Agent + LangSmith
 
+### Phase 1 实施记录
+
+**新增目录**：
+- `app/llm/` — LangChain 原子能力层
+  - `client.py` — `get_chat_llm()` 工厂 + `chat_completion()` 带重试
+  - `embedding.py` — DashScope embedding（从 services/common 迁来）
+  - `prompts.py` — YAML PromptTemplate 加载器
+- `app/prompts/*.yaml` — 8 个 prompt 外置（position_agent_system / resume_parse / resume_analyze / question_generate / question_select / question_seed / evaluate_answer / generate_report）
+- `app/repositories/` — Repository Pattern 骨架
+  - `base.py` — `BaseRepository[T]` 泛型基类
+  - `interview_repo.py` — 首个 repo（list_by_user / list_messages / get_active_question）
+- `app/workflows/_shared/` — LangGraph 编排共享设施
+  - `llm.py` / `checkpointer.py`（AsyncPostgresSaver 单例）/ `state_base.py` / `tracing.py` / `format_exception.py` / `tools.py`
+
+**修改**：
+- `position_agent_service.get_llm()` 委托 `app.llm.get_chat_llm`
+- `ai_service._chat / _chat_stream` 委托 `app.llm.chat_completion`
+- `services/common/embedding.py` 改为 deprecation stub
+- CLAUDE.md 新增"LangChain / LangGraph 分工（硬性规则）"段
+
+**P1 部分遗留**（增量改进，不阻塞）：
+- ai_service 的 6 个 prompt 方法（parse_resume / analyze_resume / generate_questions / evaluate_answer / select_and_adapt / generate_with_seeds / generate_report）尚未切到 `load_prompt` — 留 Phase 2 重构 RAG 时一起做
+- 5 个 repo 只建了 1 个示例（interview_repo）— 其他 4 个（user / admin / question_bank / knowledge）留 Phase 3 增量迁移
+- ai_service 仍是 540 行 god class — 完整拆解留 Phase 3
+
 ### 已知技术债（不阻塞）
-- `services/client/ai_service.py` god class（540 行，6 套 prompt）— 等待 Phase 1 拆解
+- `services/client/ai_service.py` god class（540 行，6 套 prompt）— 等待 Phase 2-3 拆解
 - `services/client/interview_service.py` god service（660 行）— 等待 Phase 3 graph 化
 - bcrypt 72 字节限制（refresh token 哈希）— 待修
-- `vector_db/__init__.py` 导出名混淆 — 已修（`get_milvus_client` 函数）
 - `app/schedule/celery_job.py` 死代码 — 待清理
 
 ### Milvus 关键 bug 已修（Phase 0-1）
