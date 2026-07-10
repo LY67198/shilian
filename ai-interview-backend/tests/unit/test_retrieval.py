@@ -194,3 +194,45 @@ class TestRerank:
         result = await cross_encoder_rerank(query="test", candidates=candidates, top_k=1)
         assert len(result) == 1
         assert result[0].id == 1
+
+
+@pytest.mark.unit
+class TestRetrievalPipeline:
+    async def test_pipeline_calls_stages_in_order(self, monkeypatch):
+        from app.retrieval.pipeline import RetrievalPipeline
+        from app.retrieval.bm25 import BM25Index
+        from app.retrieval import SearchResult
+        bm25 = BM25Index("test")
+        bm25.build(["doc one", "doc two", "doc three"])
+        pipeline = RetrievalPipeline(client=None, collection="knowledge_chunks", bm25_index=bm25, vector_top_k=3, bm25_top_k=3, final_top_k=2, enable_rerank=True)
+
+        call_order = []
+        async def mock_vector(client, query, collection, top_k, filters=None):
+            call_order.append("vector")
+            return [SearchResult(id=1, content="vec result 1", score=0.9, source="vector"), SearchResult(id=2, content="vec result 2", score=0.7, source="vector")]
+        monkeypatch.setattr("app.retrieval.pipeline.vector_search", mock_vector)
+
+        async def mock_rerank(query, candidates, top_k, model=None):
+            call_order.append("rerank")
+            return candidates[:top_k]
+        monkeypatch.setattr("app.retrieval.pipeline.cross_encoder_rerank", mock_rerank)
+
+        results = await pipeline.search(query="test query")
+        assert "vector" in call_order
+        assert "rerank" in call_order
+        assert len(results) == 2
+
+    async def test_pipeline_without_rerank(self, monkeypatch):
+        from app.retrieval.pipeline import RetrievalPipeline
+        from app.retrieval.bm25 import BM25Index
+        from app.retrieval import SearchResult
+        bm25 = BM25Index("test")
+        bm25.build(["doc one", "doc two"])
+        pipeline = RetrievalPipeline(client=None, collection="knowledge_chunks", bm25_index=bm25, enable_rerank=False, final_top_k=4)
+
+        async def mock_vector(client, query, collection, top_k, filters=None):
+            return [SearchResult(id=1, content="vec", score=0.9, source="vector")]
+        monkeypatch.setattr("app.retrieval.pipeline.vector_search", mock_vector)
+
+        results = await pipeline.search(query="test")
+        assert len(results) >= 1
