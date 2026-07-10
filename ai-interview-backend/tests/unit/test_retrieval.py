@@ -87,3 +87,25 @@ class TestVectorSearch:
         )
 
         assert results == []
+
+
+@pytest.mark.unit
+class TestBM25Index:
+    def test_build_and_search(self):
+        from app.retrieval.bm25 import BM25Index
+        idx = BM25Index("test")
+        idx.build(["Python async programming guide", "Java concurrency patterns", "Python web framework Django"])
+        results = idx.search("python async", top_k=2)
+        assert len(results) == 2
+        assert "Python async" in idx._corpus[results[0][0]]
+
+    def test_empty_corpus_returns_empty(self):
+        from app.retrieval.bm25 import BM25Index
+        idx = BM25Index("empty")
+        assert idx.search("query", top_k=5) == []
+
+    def test_tokenize_bigrams(self):
+        from app.retrieval.bm25 import BM25Index
+        idx = BM25Index("test")
+        tokens = idx._tokenize("hello world")
+        assert len(tokens) > 0
