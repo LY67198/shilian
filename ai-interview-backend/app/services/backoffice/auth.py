@@ -49,6 +49,8 @@ async def _bo_clear_login_attempts(email: str) -> None:
 
 
 class BackofficeAuthService:
+    """后台认证服务，提供管理员登录、令牌刷新和登出功能。"""
+
     async def authenticate_admin(self, db: AsyncSession, email: str, password: str) -> Optional[Admin]:
         """管理员认证"""
         admin_query = select(Admin).where(Admin.email == email)

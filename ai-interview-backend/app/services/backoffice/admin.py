@@ -9,6 +9,8 @@ from app.core.security import get_password_hash, verify_password
 
 
 class AdminService:
+    """后台管理员服务，提供管理员的创建、查询、更新、删除和密码管理功能。"""
+
     async def create_admin(self, db: AsyncSession, admin_data: AdminCreate) -> AdminResponse:
         """创建新管理员"""
         # 检查邮箱是否已存在

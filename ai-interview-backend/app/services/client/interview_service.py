@@ -29,6 +29,7 @@ def _build_retrieval_query(target_position: str, parsed_resume: dict) -> str:
 
 
 class InterviewService:
+    """面试服务，负责启动面试、RAG 出题、获取评估报告和面试记录管理。"""
 
     async def _generate_questions_with_rag(
         self,

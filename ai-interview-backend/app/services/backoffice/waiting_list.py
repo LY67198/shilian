@@ -6,6 +6,8 @@ from datetime import datetime
 
 
 class WaitingListService:
+    """后台等待列表服务，提供分页查询和筛选等待列表记录的功能。"""
+
     async def get_waiting_list_query(
         self,
         db: AsyncSession,

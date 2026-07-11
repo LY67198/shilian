@@ -81,11 +81,28 @@ def ensure_index(
 
 
 def describe_index(client: MilvusClient, collection_name: str) -> List[Dict]:
-    """查询 collection 的索引详情"""
+    """查询指定 collection 的索引详情。
+
+    Args:
+        client: Milvus 客户端实例。
+        collection_name: 目标 collection 名称。
+
+    Returns:
+        索引配置信息列表，每项包含 field_name、index_type、metric_type、params 等字段。
+    """
     return client.describe_index(collection_name=collection_name)
 
 
 def has_collection(client: MilvusClient, collection_name: str) -> bool:
+    """检查指定 collection 是否存在。
+
+    Args:
+        client: Milvus 客户端实例。
+        collection_name: 目标 collection 名称。
+
+    Returns:
+        collection 存在返回 True，否则返回 False。
+    """
     return client.has_collection(collection_name)
 
 
@@ -95,5 +112,12 @@ def drop_collection(client: MilvusClient, collection_name: str) -> None:
 
 
 def get_search_params() -> Dict[str, Any]:
-    """运行时获取搜索参数（允许 .env 覆盖）"""
+    """获取运行时搜索参数。
+
+    Args:
+        （无参数）
+
+    Returns:
+        搜索参数字典（metric_type、params 等），允许通过 .env 覆盖默认值。
+    """
     return DEFAULT_SEARCH_PARAMS.copy()

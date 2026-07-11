@@ -16,6 +16,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 class ResumeService:
+    """简历服务，提供简历上传、PDF 解析、AI 解析分析和简历管理功能。"""
 
     async def upload_and_parse(
         self,

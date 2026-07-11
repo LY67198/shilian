@@ -29,7 +29,7 @@ async def ask_question_node(state: InterviewState, config: RunnableConfig) -> di
         )
 
     next_question = questions[next_index]["question"]
-    interview_repo.create_message(
+    await interview_repo.create_message(
         db, interview_id, role="interviewer",
         content=next_question, question_index=next_index,
     )

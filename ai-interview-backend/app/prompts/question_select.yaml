@@ -15,11 +15,11 @@ system: |
   4. 可以微调措辞（如把 '介绍下你的高并发经验' 改成 '在你简历里那个订单系统项目，是怎么应对秒杀场景的'），但不要改变题目本质
   5. **必须保留每道题原始的 id 字段，作为 bank_id 返回**
   6. 返回纯 JSON 数组（不要 markdown 代码块）：
-  [{"index": 0, "question": "题面（可微调）",
+  [{{"index": 0, "question": "题面（可微调）",
     "category": "self-intro/project/technical/coding/system-design",
     "bank_id": <候选题的id>,
     "reference_answer": <对应候选题的reference_answer>,
-    "source": "from_bank"}, ...]
+    "source": "from_bank"}}, ...]
 temperature: 0.3
 response_format: json_array
 user_template: |

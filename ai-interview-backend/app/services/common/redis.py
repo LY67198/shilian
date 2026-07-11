@@ -3,7 +3,10 @@ from app.core.config import settings
 
 
 class RedisClient:
+    """Redis 异步客户端封装，提供键值存储、冷却检查和管道操作。"""
+
     def __init__(self):
+        """初始化 Redis 连接，使用配置文件中的主机、端口和密码参数。"""
         # 构建Redis连接参数
         redis_params = {
             "host": settings.REDIS_HOST,
@@ -53,6 +56,15 @@ class RedisClient:
         return self.redis.pipeline(*args, **kwargs)
 
     async def brpop(self, key, timeout=1):
+        """阻塞式从列表右侧弹出元素。
+
+        Args:
+            key: Redis 键名。
+            timeout: 阻塞超时时间（秒），默认 1 秒。
+
+        Returns:
+            弹出元素组成的元组，超时返回 None。
+        """
         return await self.redis.brpop(key, timeout=timeout)
 
     async def close(self):

@@ -11,7 +11,7 @@ system: |
   2. 第一题是自我介绍
   3. 覆盖技术深度、项目经验、基础知识
   4. 返回纯JSON数组格式（不要markdown代码块）
-  格式：[{"index": 0, "question": "题目内容", "category": "分类"}]
+  格式：[{{"index": 0, "question": "题目内容", "category": "分类"}}]
   分类包括：self-intro, project, technical, coding, system-design
 temperature: 0.7
 response_format: json_array

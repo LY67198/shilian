@@ -19,11 +19,11 @@ system: |
   - 1-2：完全答非所问或敷衍
 
   返回纯 JSON：
-  {
+  {{
     "score": <float 0-10>,
     "feedback": "<简短评语，50字以内>",
     "follow_up": <bool 是否需要追问>
-  }
+  }}
 user_template: |
   题目：{question}
 

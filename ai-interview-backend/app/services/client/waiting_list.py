@@ -12,7 +12,18 @@ from app.schedule.jobs.email_tasks import send_waiting_list_verification_task, s
 
 
 class WaitingListService:
+    """等待列表服务，提供邮箱验证令牌生成/校验、IP 限流、申请提交和重发验证邮件等功能。"""
+
     async def generate_verification_token(self, email: str, waiting_list_id: int) -> str:
+        """生成 JWT 邮箱验证令牌，并将唯一 jti 存入 Redis。
+
+        Args:
+            email: 用户邮箱。
+            waiting_list_id: 等待列表记录 ID。
+
+        Returns:
+            JWT 验证令牌字符串，有效期 24 小时。
+        """
         from jose import jwt
         from datetime import datetime, UTC
         import uuid
@@ -37,6 +48,17 @@ class WaitingListService:
         return token
 
     async def verify_token(self, token: str) -> Dict:
+        """校验 JWT 验证令牌的有效性。
+
+        Args:
+            token: JWT 验证令牌。
+
+        Returns:
+            解析后的 JWT payload 字典。
+
+        Raises:
+            APIException: 令牌无效或已被更新的链接替代。
+        """
         payload = _verify_jwt(token, scope="waiting-list-verification")
         if not payload:
             raise APIException(status_code=400, message="无效或已过期的验证链接")
@@ -55,6 +77,14 @@ class WaitingListService:
         return payload
 
     async def check_ip_rate_limit(self, ip_address: str) -> None:
+        """检查 IP 地址的申请频率限制（每小时最多 100 次）。
+
+        Args:
+            ip_address: 客户端 IP 地址。
+
+        Raises:
+            APIException: IP 请求次数超过限制。
+        """
         redis_key = f"waiting_list:ip:{ip_address}"
         count_str = await redis_client.get(redis_key)
 
@@ -76,6 +106,19 @@ class WaitingListService:
         ip_address: str,
         user_agent: str
     ) -> Dict:
+        """提交等待列表申请，发送邮箱验证邮件。
+
+        若邮箱已存在且已验证则拒绝；若已存在但未验证则重发验证邮件。
+
+        Args:
+            db: 数据库会话。
+            data: 申请数据，包含 first_name、last_name、email、university。
+            ip_address: 客户端 IP 地址。
+            user_agent: 客户端 User-Agent。
+
+        Returns:
+            包含 email 和 message 的字典。
+        """
         existing_query = select(WaitingList).where(WaitingList.email == data["email"])
         result = await db.execute(existing_query)
         existing = result.scalar_one_or_none()
@@ -134,6 +177,15 @@ class WaitingListService:
             }
 
     async def verify_email(self, db: AsyncSession, token: str) -> Dict:
+        """验证邮箱并标记等待列表记录为已验证，同时通知管理员。
+
+        Args:
+            db: 数据库会话。
+            token: JWT 验证令牌。
+
+        Returns:
+            包含 message、email 和 verified_at 的字典。
+        """
         payload = await self.verify_token(token)
         waiting_list_id = int(payload.get("sub"))
         email = payload.get("email")
@@ -174,6 +226,16 @@ class WaitingListService:
             }
 
     async def resend_verification(self, db: AsyncSession, email: str, ip_address: str) -> Dict:
+        """重新发送邮箱验证邮件。
+
+        Args:
+            db: 数据库会话。
+            email: 用户邮箱。
+            ip_address: 客户端 IP 地址。
+
+        Returns:
+            包含 message 和 email 的字典。
+        """
         query = select(WaitingList).where(WaitingList.email == email)
         result = await db.execute(query)
         record = result.scalar_one_or_none()

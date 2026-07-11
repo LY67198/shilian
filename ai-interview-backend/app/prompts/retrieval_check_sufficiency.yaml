@@ -15,10 +15,10 @@ system: |
   - 片段内容偏题，讨论的是其他话题
 
   返回纯JSON：
-  {
+  {{
     "sufficient": true,
     "reason": "low_relevance / too_few / off_topic / ok"
-  }
+  }}
 temperature: 0.3
 response_format: json
 user_template: |

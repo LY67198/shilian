@@ -30,6 +30,7 @@ def _build_embedding_text(question: str, reference_answer: Optional[str]) -> str
 
 
 class QuestionBankService:
+    """题库服务，提供题目的 CRUD、向量化、批量索引重建和语义检索功能（PG + Milvus 双写）。"""
 
     # ── CRUD ────────────────────────────────────────────────────────────
 
@@ -82,6 +83,15 @@ class QuestionBankService:
         return q
 
     async def get_by_id(self, db: AsyncSession, question_id: int) -> Optional[QuestionBank]:
+        """根据主键获取题目。
+
+        Args:
+            db: 数据库会话。
+            question_id: 题目 ID。
+
+        Returns:
+            QuestionBank 实例，不存在则返回 None。
+        """
         return await db.get(QuestionBank, question_id)
 
     async def update(self, db: AsyncSession, question_id: int, data: dict) -> Optional[QuestionBank]:
@@ -190,7 +200,15 @@ class QuestionBankService:
     # ── 向量化 ──────────────────────────────────────────────────────────
 
     async def embed_question(self, db: AsyncSession, question_id: int) -> bool:
-        """单题重新向量化（PG embedding_text + Milvus embedding）"""
+        """单题重新向量化：更新 PG embedding_text 并重新写入 Milvus 向量。
+
+        Args:
+            db: 数据库会话。
+            question_id: 题目 ID。
+
+        Returns:
+            成功返回 True，题目不存在返回 False。
+        """
         q = await db.get(QuestionBank, question_id)
         if not q:
             return False
@@ -260,7 +278,13 @@ class QuestionBankService:
         return {"embedded": count}
 
     def reindex_all_sync(self) -> dict:
-        """全量重建 embedding（升级模型时使用）"""
+        """全量重建所有题目的 embedding（升级向量模型时使用）。
+
+        按每批 50 题分组，逐批调用 batch_embed_sync 完成向量重建。
+
+        Returns:
+            包含 total_reindexed 计数的字典。
+        """
         import asyncio
         from app.db.base import get_session_local
 

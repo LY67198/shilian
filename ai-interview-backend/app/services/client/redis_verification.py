@@ -14,6 +14,8 @@ MAX_VERIFICATION_ATTEMPTS = 5  # 最大验证尝试次数
 
 
 class RedisVerificationService:
+    """Redis 验证码服务，提供验证码生成、存储、校验和发送频率限制功能。"""
+
     def generate_6_digit_code(self) -> str:
         """生成6位数字验证码"""
         return f"{random.randint(100000, 999999)}"

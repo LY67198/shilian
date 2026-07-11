@@ -34,11 +34,22 @@ class RetrievalCheckService:
         pipeline: RetrievalPipeline,
         max_retries: int = 2,
     ):
+        """初始化自检检索服务。
+
+        Args:
+            pipeline: 混合检索管线实例（vector + BM25 + RRF + rerank）。
+            max_retries: 最大重试次数，超过后强制返回当前结果。
+        """
         self.pipeline = pipeline
         self.max_retries = max_retries
         self._graph: StateGraph | None = None
 
     def _get_graph(self) -> StateGraph:
+        """获取编译后的自检 StateGraph 实例（懒加载）。
+
+        Returns:
+            编译后的 StateGraph，包含 checkpointer 和自检循环边。
+        """
         if self._graph is None:
             builder = build_retrieval_check_graph()
             self._graph = builder.compile()

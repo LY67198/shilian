@@ -21,6 +21,11 @@ BATCH_SIZE = 25  # DashScope 单次最多 25 条
 
 
 def get_embeddings() -> DashScopeEmbeddings:
+    """获取 DashScope Embeddings 单例实例。
+
+    Returns:
+        DashScopeEmbeddings 实例。
+    """
     global _embeddings
     if _embeddings is None:
         _embeddings = DashScopeEmbeddings(

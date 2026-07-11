@@ -28,11 +28,11 @@ COLLECTION_NAME = settings.MILVUS_COLLECTION_QUESTION_BANK  # "question_bank"
 
 
 def _escape_filter_string(value: str) -> str:
-    """安全转义 Milvus filter 表达式中的字符串值
+    r"""安全转义 Milvus filter 表达式中的字符串值
 
     Milvus 表达式使用双引号括字符串，特殊字符需转义：
-    - "  → \" （防止提前闭合）
-    - \  → \\ （反斜杠本身）
+    - 双引号 " 需转义为 \"
+    - 反斜杠 \ 需转义为 \\
     - LIKE 通配符 % / _ 前加 \\ 避免被当作模式匹配
     """
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -40,6 +40,15 @@ def _escape_filter_string(value: str) -> str:
 
 
 def get_schema(dim: int) -> CollectionSchema:
+    """构造 question_bank collection 的字段 schema。
+
+    Args:
+        dim: embedding 向量维度。
+
+    Returns:
+        包含 10 个字段（id / category / position_tag / difficulty / question /
+        reference_answer / key_points / tags / embedding_text / embedding）的 CollectionSchema 对象。
+    """
     fields = [
         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
         FieldSchema(name="category", dtype=DataType.VARCHAR, max_length=50),
@@ -74,6 +83,12 @@ class QuestionPayload(BaseModel):
 
 
 def create_collection(client: MilvusClient, dim: int) -> None:
+    """创建 question_bank collection 并加载到内存（已存在则跳过）。
+
+    Args:
+        client: Milvus 客户端实例。
+        dim: embedding 向量维度。
+    """
     if client.has_collection(COLLECTION_NAME):
         logger.info(f"Collection 已存在: {COLLECTION_NAME}")
         ensure_index(client, COLLECTION_NAME)
@@ -162,6 +177,15 @@ def search(
 
 
 def delete_question(client: MilvusClient, question_id: int) -> int:
+    """按主键删除单条题目。
+
+    Args:
+        client: Milvus 客户端实例。
+        question_id: 目标题目的 PostgreSQL ID。
+
+    Returns:
+        实际删除的条数（0 或 1）。
+    """
     result = client.delete(
         collection_name=COLLECTION_NAME,
         filter=f"id == {question_id}",

@@ -53,6 +53,8 @@ async def _clear_login_attempts(email: str) -> None:
 
 
 class ClientAuthService:
+    """客户端认证服务，提供用户注册、登录、令牌刷新和密码重置等认证相关业务逻辑。"""
+
     def validate_password(self, password: str) -> bool:
         """验证密码强度"""
         if len(password) < 8:

@@ -30,7 +30,7 @@ class TestCheckSufficiencyNode:
                 return SufficiencyResult(sufficient=True, reason="ok")
 
         mock_llm = type("MockLLM", (), {
-            "with_structured_output": lambda self, model: MockChain(),
+            "with_structured_output": lambda self, model, **kwargs: MockChain(),
         })()
 
         monkeypatch.setattr(

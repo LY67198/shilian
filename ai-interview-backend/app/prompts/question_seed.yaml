@@ -15,8 +15,8 @@ system: |
   4. 整体难度递进（易→难）
   5. 风格与题库题保持一致，避免太开放或与简历无关
   6. 返回纯 JSON 数组（不要 markdown 代码块）：
-  [{"index": 0, "question": "...", "category": "self-intro/project/technical/coding/system-design",
-    "bank_id": null, "reference_answer": "...", "source": "ai_fallback"}, ...]
+  [{{"index": 0, "question": "...", "category": "self-intro/project/technical/coding/system-design",
+    "bank_id": null, "reference_answer": "...", "source": "ai_fallback"}}, ...]
 temperature: 0.5
 response_format: json_array
 user_template: |

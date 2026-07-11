@@ -42,29 +42,45 @@ ai-interview-agent/
 │   │   ├── llm/                   # 🆕 LangChain 原子能力（LLM/Embedding/Prompt 工厂）
 │   │   ├── prompts/               # 🆕 PromptTemplate YAML 集中管理（8 个文件）
 │   │   ├── repositories/          # 🆕 Repository Pattern 数据访问层
+│   │   ├── agents/                # 🆕 Phase 4 多 Agent 架构（BaseAgent → Question/Evaluator/Report）
+│   │   ├── retrieval/             # 🆕 Phase 3 RAG 混合检索管线
+│   │   │   ├── vector.py          # Milvus HNSW L2 向量检索
+│   │   │   ├── bm25.py            # BM25 倒排索引（character bigrams）
+│   │   │   ├── bm25_lifecycle.py  # BM25 索引生命周期管理
+│   │   │   ├── rrf.py             # RRF 倒数秩融合
+│   │   │   ├── rerank.py          # Cross-Encoder 重排序（qwen3-rerank）
+│   │   │   └── pipeline.py        # RetrievalPipeline 统一入口
 │   │   ├── workflows/             # 🆕 LangGraph 编排层
-│   │   │   └── _shared/           # 共享基础设施（checkpointer/state/tracing/llm/tools/sse）
-│   │   │       └── sse.py         # astream_to_sse() LangGraph → SSE 封装
+│   │   │   ├── _shared/           # 共享基础设施（checkpointer/state/tracing/llm/tools/sse）
+│   │   │   │   └── sse.py         # astream_to_sse() LangGraph → SSE 封装
 │   │   │   ├── interview/         # ✅ Phase 2 面试评估（HITL StateGraph）
 │   │   │   │   ├── nodes/         # fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report
 │   │   │   │   ├── state.py       # InterviewState + ScoreResult
 │   │   │   │   ├── graph.py       # build_interview_graph() + get_compiled_graph()
 │   │   │   │   └── service.py     # submit_answer() 单一入口（模块级函数）
+│   │   │   └── retrieval_check/   # 🆕 Phase 3 检索自检循环（retrieve → check → rewrite query）
+│   │   ├── deps.py                # 🆕 Phase 4 统一 Depends 工厂（agent + service）
 │   │   ├── vector_db/             # 🆕 Milvus 客户端 + collections schema + CRUD
 │   │   │   ├── client.py          # MilvusClient 单例 + health_check
 │   │   │   ├── index.py           # HNSW + L2 索引配置
 │   │   │   └── collections/
 │   │   │       ├── knowledge.py   # knowledge_chunks collection
 │   │   │       └── question_bank.py # question_bank collection
-│   │   ├── common/                # language / log_consumer / release
+│   │   ├── common/                # language / release / json_utils
 │   │   ├── exceptions/            # APIException / 错误码
 │   │   ├── utils/                 # 通用工具
 │   │   └── schedule/              # Celery 定时任务
 │   ├── tests/                     # pytest 测试
+│   ├── eval/                       # 🆕 Phase 3 RAGAS 评估框架
+│   │   ├── golden_set.json         # 手工标注评测集（20-30 条）
+│   │   ├── reports/                # baseline-{date}.json 评估报告
+│   │   └── scripts/                # upload_golden_set.py / eval_ragas.py
 │   ├── migrations/                # Alembic（含 drop_pgvector_embedding_columns）
 │   ├── scripts/
 │   │   ├── create_first_admin.py
 │   │   ├── seed_position_templates.py
+│   │   ├── seed_question_bank.py  # 🆕 题库种子数据（28 题，3 岗位）
+│   │   ├── seed_knowledge.py      # 🆕 知识库种子数据（4 文档，Markdown）
 │   │   ├── init_milvus.py         # 🆕 建 Milvus collections + 索引
 │   │   └── deploy.sh
 │   └── docker-compose*.yml        # 含 minio + milvus service
@@ -103,7 +119,7 @@ ai-interview-agent/
 - **JWT 区分 scope**：client / backoffice 两套 token
 - **Swagger 双套**：`/client/docs`（无需认证）、`/backoffice/docs`（需 JWT）
 - **路由统一注册**：所有路由通过 `app/route/router_registry.py` 集中管理
-- **测试在容器内跑**：dev compose 把 `./tests` 和 `./pytest.ini` 挂进 `ai-interview-app`
+- **测试在容器内跑**：dev compose 把 `./tests` 和 `./pytest.ini` 挂进 `shilian-app`
 
 ## LangChain / LangGraph 分工（硬性规则）
 
@@ -159,6 +175,10 @@ docker exec shilian-app alembic upgrade head
 docker exec shilian-app python scripts/create_first_admin.py
 docker exec shilian-app python scripts/seed_position_templates.py
 
+# 种子数据（题库 28 题 + 知识库 4 文档）
+docker exec shilian-app python scripts/seed_question_bank.py
+docker exec shilian-app python scripts/seed_knowledge.py
+
 # Milvus 初始化（建 collections + HNSW L2 索引 + load 到内存）
 docker exec shilian-app python scripts/init_milvus.py
 
@@ -186,7 +206,7 @@ RUN_E2E=1 docker exec -e RUN_E2E=1 shilian-app pytest -m "e2e"
 cd ai-interview-frontend && npm install && npm run dev   # → localhost:3000
 cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 
-# 管理端登录：admin@ai-interview.com / ai-interview&admin
+# 管理端登录：admin@ai-interview.com / LY1234567890
 ```
 
 ## 当前状态
@@ -213,8 +233,14 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
 - **Phase 2 实施完成**（2026-07-10）：核心面试 LangGraph 化 + 4 个 P0 bug 修复 + YAML prompt 激活 + JSON 解析兜底
 - **Phase 3 完成**（2026-07-11）：RAG 管线升级 Spec + 16 任务全部实施完成。含 app/retrieval/ 模块（vector + BM25 + RRF + rerank + pipeline）、app/workflows/retrieval_check/ 自检循环、eval/ 评估框架（golden set + RAGAS）
-
-- **过度封装清理**（2026-07-11）：代码审计，删除/简化 6 项过封装类 + 1 项死代码。MilvusClientWrapper / AuthBase / InterviewGraphService 三类空壳类改为模块级函数，BaseRepository 精简，email_brevo.py 删除。净删 ~140 行，测试 51/51 pass。- **技术债清理**（2026-07-11）：一次性解决 12 项已知技术债，10 项已修 / 2 项跳过（paginator 跳过/golden set 人工标注），净删 ~500 行，测试 32/32 pass。详见 `docs/superpowers/specs/2026-07-11-tech-debt-cleanup-design.md`。
+- **过度封装清理**（2026-07-11）：代码审计，删除/简化 6 项过封装类 + 1 项死代码。净删 ~140 行，测试 51/51 pass
+- **技术债清理**（2026-07-11）：一次性解决 12 项已知技术债，10 项已修 / 2 项跳过，净删 ~500 行，测试 32/32 pass
+- **代码文档化**（2026-07-11）：核心模块 53 个文件全部补全 Google 风格中文 docstring（Args:/Returns:），~49 处新增
+- **项目文档更新**（2026-07-11）：工程化能力.md / 面试要点.md / 项目RAG实现原理.md / AI面试项目问答清单.md / AI应用工程化能力.md / 部署教程.md 6 份文档同步到 Phase 4 状态
+- **前端 SSE 流式解析修复**（2026-07-11）：`interview.js:submitAnswerStream()` 只认 `data.type` 字段，但后端用 SSE `event:` 头。改为解析 `event:` 行 + 按后端事件类型路由（chunk → onChunk, score/next_question → 累积, done → onDone 合并）。修复后面试提交回答后 AI 反馈能实时流式显示，不再卡住。
+- **Milvus KnowledgeChunkPayload.metadata 修复**（2026-07-11）：`metadata` 字段默认值从 `None` 改为 `Field(default_factory=dict)`，解决 Milvus JSON 字段拒绝 `None` 值的问题。
+- **种子数据补齐**（2026-07-11）：题库从空的 0 题扩充到 28 题（python_backend 10 / java_backend 9 / vue_frontend 9），知识库从空的 0 文档扩充到 4 篇 Markdown 文档（16 chunks），全部已向量化写入 Milvus。面试出题不再每次走纯 AI 生成兜底。
+- **管理员密码重置**（2026-07-11）：`admin@ai-interview.com` 密码从 `ai-interview&admin` 改为 `LY1234567890`，旧密码有 `&` 符号易在 shell 中被误解析。
 ### 重构路线（4 个 Phase）
 
 > 路线图于 2026-07-10 重排，详见 `docs/superpowers/specs/2026-07-10-phase-2-4-roadmap-redesign.md`
@@ -300,7 +326,29 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - 14 个 service 文件全部改为实例方法 + Depends 注入
 - `app/deps.py` — 统一 factory 函数（agent + service）
 
-### 已知技术债（2026-07-11 清理后）- [x] ~~`interview_service`、`ai_service` `@staticmethod`~~ — **Phase 4 已解决**- [x] ~~MilvusClientWrapper~~ — **2026-07-11 改为模块级函数**- [x] ~~AuthBase 类做命名空间~~ — **2026-07-11 改为模块级函数**- [x] ~~InterviewGraphService 空壳类~~ — **2026-07-11 改为模块级函数**- [x] ~~BaseRepository~~ — **2026-07-11 精简**- [x] ~~email_brevo.py 死代码~~ — **2026-07-11 已删除**- [x] ~~ai_service._extract_json~~ — **2026-07-11 已修复**- [x] ~~email.py 重复实现~~ — **2026-07-11 已删除（死代码）**- [x] ~~自定义重试循环~~ — **2026-07-11 改用 tenacity**- [x] ~~SSE 手写格式化~~ — **2026-07-11 改用 sse-starlette ServerSentEvent**- [x] ~~自定义日志分发~~ — **2026-07-11 移除 Redis 管道，删除 log_consumer.py**- [x] ~~position_agent SYSTEM_PROMPT 硬编码~~ — **2026-07-11 改用 YAML load_prompt()**- [x] ~~Graph nodes state.custom.db 传 DB~~ — **2026-07-11 改用 config.configurable + RunnableConfig**- [x] ~~废弃文件~~ — **2026-07-11 embedding.py stub + celery_job.py 删除**- [x] ~~submit_answer 双端点~~ — **2026-07-11 合并为 /answer?stream=true|false**- [x] ~~send_welcome_email_task 未实现~~ — **2026-07-11 已实现**- [ ] 自定义分页器 Paginator — 跳过（替换 fastapi-pagination 会破坏 API 格式）- [ ] golden set relevant_chunk_ids 为空 — 需人工标注### Milvus 关键 bug 已修（Phase 0-1）
+### 已知技术债（2026-07-11 清理后）
+
+- [x] ~~`interview_service`、`ai_service` `@staticmethod`~~ — **Phase 4 已解决**
+- [x] ~~MilvusClientWrapper~~ — **2026-07-11 改为模块级函数**
+- [x] ~~AuthBase 类做命名空间~~ — **2026-07-11 改为模块级函数**
+- [x] ~~InterviewGraphService 空壳类~~ — **2026-07-11 改为模块级函数**
+- [x] ~~BaseRepository~~ — **2026-07-11 精简**
+- [x] ~~email_brevo.py 死代码~~ — **2026-07-11 已删除**
+- [x] ~~ai_service._extract_json~~ — **2026-07-11 已修复**
+- [x] ~~email.py 重复实现~~ — **2026-07-11 已删除（死代码）**
+- [x] ~~自定义重试循环~~ — **2026-07-11 改用 tenacity**
+- [x] ~~SSE 手写格式化~~ — **2026-07-11 改用 sse-starlette ServerSentEvent**
+- [x] ~~自定义日志分发~~ — **2026-07-11 移除 Redis 管道，删除 log_consumer.py**
+- [x] ~~position_agent SYSTEM_PROMPT 硬编码~~ — **2026-07-11 改用 YAML load_prompt()**
+- [x] ~~Graph nodes state.custom.db 传 DB~~ — **2026-07-11 改用 config.configurable + RunnableConfig**
+- [x] ~~废弃文件~~ — **2026-07-11 embedding.py stub + celery_job.py 删除**
+- [x] ~~submit_answer 双端点~~ — **2026-07-11 合并为 /answer?stream=true|false**
+- [x] ~~send_welcome_email_task 未实现~~ — **2026-07-11 已实现**
+- [x] ~~KnowledgeChunkPayload.metadata=None 导致 Milvus insert 失败~~ — **2026-07-11 改为 Field(default_factory=dict)**
+- [ ] 自定义分页器 Paginator — 跳过（替换 fastapi-pagination 会破坏 API 格式）
+- [ ] golden set relevant_chunk_ids 为空 — 需人工标注
+
+### Milvus 关键 bug 已修（Phase 0-1）
 - ✅ service 层不再调已删除的 `KnowledgeChunk.embedding.cosine_distance` 列
 - ✅ 创建/更新/删除都双写 PG + Milvus
 - ✅ `pgvector` import 已从 model 移除

@@ -17,6 +17,7 @@ class EvaluatorAgent(BaseAgent):
     """评分 Agent — 结构化输出 ScoreResult"""
 
     def __init__(self):
+        """初始化评估 Agent，使用 evaluator_agent prompt 和较低温度以保证评分一致性。"""
         super().__init__(prompt_name="evaluator_agent", temperature=0.3)
 
     async def evaluate(

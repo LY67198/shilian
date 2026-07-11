@@ -37,6 +37,17 @@ class RetrievalPipeline:
         final_top_k: int = 10,
         enable_rerank: bool = True,
     ) -> None:
+        """初始化混合检索管线。
+
+        Args:
+            client: MilvusClient 实例，用于向量检索。
+            collection: Milvus collection 名称（"knowledge_chunks" 或 "question_bank"）。
+            bm25_index: BM25 关键词索引实例。
+            vector_top_k: 向量检索召回数量。
+            bm25_top_k: BM25 检索召回数量。
+            final_top_k: 融合后最终返回的结果数量。
+            enable_rerank: 是否启用重排序。
+        """
         self._client = client
         self._collection = collection
         self._bm25 = bm25_index

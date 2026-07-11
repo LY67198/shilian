@@ -23,12 +23,12 @@ class Settings(BaseSettings):
     # 数据库配置
     POSTGRES_USER: str = "demo"
     POSTGRES_PASSWORD: str = "demo123"
-    POSTGRES_HOST: str = "192.168.110.90"
+    POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "demo"
+    POSTGRES_DB: str = "ai_interview"
 
     # Redis 配置
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ""
 
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     BREVO_EMAIL_FROM_NAME: str = "Seiki"
 
     # 管理员邮箱
-    ADMIN_EMAIL: str = "dev@zetos.fr"
+    ADMIN_EMAIL: str = "admin@example.com"
 
     # JWT 配置
     SECRET_KEY: str = "your-secret-key-change-in-production"

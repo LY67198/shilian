@@ -49,8 +49,18 @@ async def build_bm25_indices(db_session) -> None:
 
 
 def get_knowledge_bm25() -> BM25Index | None:
+    """获取知识库 BM25 索引单例。
+
+    Returns:
+        已构建的知识库 BM25Index 实例，若尚未构建则返回 None。
+    """
     return knowledge_bm25
 
 
 def get_question_bank_bm25() -> BM25Index | None:
+    """获取题库 BM25 索引单例。
+
+    Returns:
+        已构建的题库 BM25Index 实例，若尚未构建则返回 None。
+    """
     return question_bank_bm25

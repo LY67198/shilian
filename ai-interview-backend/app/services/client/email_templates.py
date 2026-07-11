@@ -12,6 +12,8 @@ from app.services.common.email_smtp import (
 
 
 class ClientEmailService:
+    """客户端邮件服务，封装注册验证、密码重置、欢迎邮件和等待列表通知的发送逻辑。"""
+
     async def send_registration_verification(self, email: str, verification_code: str, user_name: str = None):
         """
         Send registration verification code email

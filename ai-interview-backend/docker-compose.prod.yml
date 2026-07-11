@@ -65,8 +65,22 @@ services:
         max-file: "2"
 
   nginx:
-    profiles:
-      - donotstart
+    ports:
+      - "80:80"
+      # HTTPS port (uncomment when TLS certs configured):
+      # - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # TLS certificates (uncomment and place certs in ./ssl/):
+      # - ./ssl:/etc/nginx/ssl:ro
+      # Frontend static builds (pre-built before deploy):
+      - ../ai-interview-frontend/dist:/usr/share/nginx/html/user:ro
+      - ../ai-interview-admin/dist:/usr/share/nginx/html/admin:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   flower:
     ports:

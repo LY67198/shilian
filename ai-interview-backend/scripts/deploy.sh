@@ -1,61 +1,77 @@
 #!/bin/bash
 
-# AI Interview production deployment script
-# Run this script on the production server inside ai-interview-backend/
+# 试炼 (MockPilot) production deployment script
+# Run from ai-interview-backend/ directory
+# Usage: ./scripts/deploy.sh [--skip-frontend]
 
 set -e
+
+SKIP_FRONTEND=false
+if [ "$1" = "--skip-frontend" ]; then
+    SKIP_FRONTEND=true
+fi
 
 COMPOSE_FILES="${COMPOSE_FILES:-"-f docker-compose.yml -f docker-compose.prod.yml"}"
 API_PORT="${API_PORT:-8001}"
 HEALTH_ENDPOINT="http://localhost:${API_PORT}/api/v1/config/health"
 TIMEOUT=120
 
-echo "Starting AI Interview deployment..."
+echo "=== 试炼 (MockPilot) Deployment ==="
 echo "Compose files: $COMPOSE_FILES"
 echo "API port: $API_PORT"
-echo "Health endpoint: $HEALTH_ENDPOINT"
 
-check_health() {
-    local timeout=$1
-    echo "Waiting for application health check..."
+# -------- Build frontends --------
+if [ "$SKIP_FRONTEND" = false ]; then
+    echo ""
+    echo "--- Building user-facing frontend ---"
+    (cd ../ai-interview-frontend && npm install && npm run build)
+    echo "User frontend build complete."
 
-    while [ "$timeout" -gt 0 ]; do
-        if curl -f "$HEALTH_ENDPOINT" >/dev/null 2>&1; then
-            echo "Application is healthy."
-            return 0
-        fi
-        sleep 5
-        timeout=$((timeout - 5))
-        echo "Still waiting... ${timeout}s left"
-    done
+    echo ""
+    echo "--- Building admin panel ---"
+    (cd ../ai-interview-admin && npm install && npm run build)
+    echo "Admin panel build complete."
+else
+    echo "Skipping frontend build (--skip-frontend)."
+fi
 
-    echo "Application did not become healthy in time."
-    return 1
-}
+# -------- Start services --------
+echo ""
+echo "--- Building and starting containers ---"
+docker compose $COMPOSE_FILES up -d --build
 
-show_logs() {
-    echo "Recent service logs:"
-    docker compose $COMPOSE_FILES logs --tail=80
-}
+echo ""
+echo "--- Running database migrations ---"
+docker compose $COMPOSE_FILES exec -T app alembic upgrade head
 
-main() {
-    echo "Building and starting containers..."
-    docker compose $COMPOSE_FILES up -d --build
+echo ""
+echo "--- Container status ---"
+docker compose $COMPOSE_FILES ps
 
-    echo "Running database migrations..."
-    docker compose $COMPOSE_FILES exec -T app alembic upgrade head
-
-    echo "Container status:"
-    docker compose $COMPOSE_FILES ps
-
-    if ! check_health "$TIMEOUT"; then
-        show_logs
-        exit 1
+# -------- Health check --------
+echo ""
+echo "--- Health check ---"
+timeout=$TIMEOUT
+while [ "$timeout" -gt 0 ]; do
+    if curl -sf "$HEALTH_ENDPOINT" >/dev/null 2>&1; then
+        echo "Application is healthy."
+        break
     fi
+    sleep 5
+    timeout=$((timeout - 5))
+    echo "  Waiting... ${timeout}s left"
+done
 
-    echo "Deployment completed successfully."
-}
+if [ "$timeout" -le 0 ]; then
+    echo "ERROR: Application did not become healthy."
+    echo "Recent logs:"
+    docker compose $COMPOSE_FILES logs --tail=80
+    exit 1
+fi
 
-trap 'echo "Deployment failed."; show_logs; exit 1' ERR
-
-main "$@"
+echo ""
+echo "=== Deployment completed ==="
+echo "User frontend:  http://localhost"
+echo "Admin panel:    http://localhost/admin"
+echo "API (direct):   http://localhost:${API_PORT}"
+echo "Swagger:        http://localhost/client/docs"

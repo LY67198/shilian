@@ -254,7 +254,7 @@ async function handleSubmit() {
         if (data.is_finished) {
           finished.value = true
         } else if (data.next_question) {
-          currentIndex.value = data.question_index + 1
+          currentIndex.value = data.question_index
           messages.value.push({ role: 'interviewer', content: data.next_question })
         }
         scrollToBottom()

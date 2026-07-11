@@ -24,6 +24,10 @@ export async function submitAnswerStream(interviewId, answer, onChunk, onDone, s
   const decoder = new TextDecoder()
   let buffer = ''
 
+  let currentEvent = ''
+  let scoreData = null
+  let nextQuestionData = null
+
   try {
     while (true) {
       const { done, value } = await reader.read()
@@ -34,15 +38,38 @@ export async function submitAnswerStream(interviewId, answer, onChunk, onDone, s
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
+        // Blank line = SSE dispatch boundary
+        if (line === '') {
+          currentEvent = ''
+          continue
+        }
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim()
+        } else if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.type === 'chunk') {
-              onChunk(data.content)
-            } else if (data.type === 'done') {
-              onDone(data)
-            } else if (data.type === 'error') {
-              throw new Error(data.content)
+            switch (currentEvent) {
+              case 'chunk':
+                onChunk(data.content)
+                break
+              case 'score':
+                scoreData = data
+                break
+              case 'next_question':
+                nextQuestionData = data
+                break
+              case 'error':
+                throw new Error(data.message || data.error || 'Unknown error')
+              case 'done':
+                onDone({
+                  score: scoreData?.score,
+                  feedback: scoreData?.feedback,
+                  follow_up: scoreData?.follow_up,
+                  is_finished: !nextQuestionData,
+                  next_question: nextQuestionData?.question,
+                  question_index: nextQuestionData?.index,
+                })
+                break
             }
           } catch (e) {
             if (e.message !== 'Unexpected end of JSON input') throw e

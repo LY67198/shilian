@@ -83,6 +83,14 @@ async def get_compiled_graph():
 
 
 def _route_after_check(state: InterviewState) -> str:
+    """判断面试是否结束，返回条件边路由目标。
+
+    Args:
+        state: 当前面试状态。
+
+    Returns:
+        "finish" 表示进入报告生成节点，"continue" 表示继续下一题。
+    """
     if state.get("is_finished"):
         return "finish"
     return "continue"

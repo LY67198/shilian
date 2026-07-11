@@ -88,6 +88,14 @@ async def astream_to_sse(
 
 
 def _sse(event: str, data: dict) -> str:
-    """生成 SSE 格式字符串（sse-starlette ServerSentEvent）"""
+    """生成 SSE 格式字符串（sse-starlette ServerSentEvent）
+
+    Args:
+        event: SSE 事件类型名称（如 chunk、status、score、error、done）。
+        data: 要序列化到事件体中的字典数据。
+
+    Returns:
+        编码后的 SSE 事件字符串，可直接通过 StreamingResponse 发送。
+    """
     from sse_starlette.sse import ServerSentEvent
     return ServerSentEvent(data=json.dumps(data, ensure_ascii=False), event=event).encode().decode()

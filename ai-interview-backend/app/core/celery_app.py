@@ -8,10 +8,9 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
-        'app.schedule.celery_job',
         'app.schedule.jobs.demo',
         'app.schedule.jobs.email_tasks',
-        'app.schedule.jobs.knowledge_tasks',  # 知识库 RAG 任务
+        'app.schedule.jobs.knowledge_tasks',
     ]
 )
 

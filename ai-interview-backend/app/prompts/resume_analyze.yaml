@@ -6,7 +6,7 @@ system: |
   {level_hint}
 
   必须返回纯JSON格式（不要markdown代码块），包含以下字段：
-  {
+  {{
     "overall_score": 7.5,
     "strengths": ["优势1", "优势2", "优势3"],
     "weaknesses": ["不足1", "不足2", "不足3"],
@@ -14,7 +14,7 @@ system: |
     "keyword_match": ["匹配的关键技能1", "匹配的关键技能2"],
     "missing_keywords": ["缺少的关键技能1", "缺少的关键技能2"],
     "summary": "一段话总结简历质量和改进方向，100字以内"
-  }
+  }}
 
   评分标准：9-10优秀，7-8良好，5-6一般，3-4较差，1-2很差
 temperature: 0.4

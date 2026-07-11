@@ -63,7 +63,17 @@ class QuestionAgent(BaseAgent):
     async def _select_from_bank(
         self, db, position: str, difficulty: str, count: int
     ) -> List[dict]:
-        """从题库 RAG 检索 + 选择"""
+        """从题库 RAG 检索并选择题目。
+
+        Args:
+            db: 数据库会话。
+            position: 目标岗位标签。
+            difficulty: 难度等级。
+            count: 期望获取的题目数量。
+
+        Returns:
+            匹配的题库题目列表，每题包含 question / reference_answer / key_points / difficulty / bank_id。
+        """
         if self._bank_repo is None:
             return []
 
@@ -94,7 +104,18 @@ class QuestionAgent(BaseAgent):
         resume: dict,
         bank_questions: list,
     ) -> List[dict]:
-        """LLM 兜底生成新题"""
+        """当题库题目不足时，使用 LLM 兜底生成新题。
+
+        Args:
+            position: 目标岗位。
+            difficulty: 难度等级。
+            count: 需要生成的题目数量。
+            resume: 候选人简历信息。
+            bank_questions: 已从题库命中的题目，用于避免重复。
+
+        Returns:
+            LLM 生成的题目列表。
+        """
         try:
             result = await self.invoke_structured(
                 variables={
@@ -120,6 +141,14 @@ class QuestionAgent(BaseAgent):
 
 
 def _item_to_dict(item: QuestionItem) -> dict:
+    """将 QuestionItem Pydantic 模型转为普通字典。
+
+    Args:
+        item: QuestionItem 模型实例。
+
+    Returns:
+        包含 question / reference_answer / key_points / difficulty / bank_id 的字典。
+    """
     return {
         "question": item.question,
         "reference_answer": item.reference_answer,

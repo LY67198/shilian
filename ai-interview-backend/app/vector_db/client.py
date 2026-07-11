@@ -20,6 +20,14 @@ _client: Optional[MilvusClient] = None
 
 
 def _create_client() -> MilvusClient:
+    """根据配置创建新的 MilvusClient 实例。
+
+    Args:
+        （无参数，从全局 settings 读取连接配置）
+
+    Returns:
+        已配置的 MilvusClient 实例。
+    """
     kwargs = {
         "uri": f"http://{settings.MILVUS_HOST}:{settings.MILVUS_PORT}",
         "db_name": settings.MILVUS_DB_NAME,

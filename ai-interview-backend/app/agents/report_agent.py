@@ -14,6 +14,7 @@ class ReportAgent(BaseAgent):
     """报告 Agent — 汇总所有评分，生成综合报告"""
 
     def __init__(self):
+        """初始化报告生成 Agent，使用 report_agent prompt。"""
         super().__init__(prompt_name="report_agent", temperature=0.5)
 
     async def generate(
@@ -52,6 +53,14 @@ class ReportAgent(BaseAgent):
 
 
 def _build_qa_text(qa_data: list[dict]) -> str:
+    """将问答数据构建为格式化文本块，用于注入 prompt。
+
+    Args:
+        qa_data: 问答数据列表，每项包含 question / answer / score 字段。
+
+    Returns:
+        格式化的问答文本。
+    """
     text = ""
     for item in qa_data:
         text += (

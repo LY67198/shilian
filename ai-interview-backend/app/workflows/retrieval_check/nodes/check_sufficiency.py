@@ -36,7 +36,7 @@ async def check_sufficiency_node(state: RetrievalCheckState) -> dict:
     )
 
     prompt = load_prompt("retrieval_check_sufficiency")
-    llm = get_chat_llm(temperature=0.3).with_structured_output(SufficiencyResult)
+    llm = get_chat_llm(temperature=0.3).with_structured_output(SufficiencyResult, method="json_mode")
 
     try:
         chain = prompt | llm

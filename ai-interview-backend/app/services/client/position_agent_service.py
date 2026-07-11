@@ -60,6 +60,7 @@ def get_agent():
 # ── 对外服务 ────────────────────────────────────────────────────────────
 
 class PositionAgentService:
+    """岗位匹配 Agent 服务，调用 LangGraph Agent 执行简历解析 -> 画像构建 -> 岗位匹配 -> 面试启动的完整流程。"""
 
     async def run_agent(
         self,

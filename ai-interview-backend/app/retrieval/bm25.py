@@ -17,6 +17,11 @@ class BM25Index:
     """
 
     def __init__(self, collection_name: str) -> None:
+        """初始化 BM25 索引实例。
+
+        Args:
+            collection_name: 集合名称标识，用于日志和调试。
+        """
         self._collection_name = collection_name
         self._corpus: list[str] = []
         self._index: Optional[BM25Okapi] = None

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class PositionTemplateService:
+    """岗位模板服务，提供岗位模板的增删改查、启用/禁用和按标签查询功能，供 Agent 和前后台使用。"""
 
     async def get_list(
         self,
