@@ -7,10 +7,14 @@ from typing import AsyncIterator
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.interview_message import InterviewMessage
+from app.retrieval.bm25_lifecycle import get_knowledge_bm25
+from app.retrieval.pipeline import RetrievalPipeline
 from app.vector_db import get_milvus_client
 from app.workflows._shared.sse import astream_to_sse
 from app.workflows.interview.graph import get_compiled_graph
+from app.workflows.retrieval_check.service import RetrievalCheckService
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,13 @@ class InterviewGraphService:
         state_data = {
             "answer": answer,
             "stream": stream,
-            "custom": {"db": db, "milvus_client": milvus_client},
+            "custom": {
+                "db": db,
+                "milvus_client": milvus_client,
+                "retrieval_check_service": _build_retrieval_check_service(
+                    milvus_client, is_first_call
+                ),
+            },
         }
 
         if is_first_call:
@@ -102,6 +112,34 @@ def _extract_response(state: dict) -> dict:
     else:
         response["next_question"] = state.get("next_question")
     return response
+
+
+def _build_retrieval_check_service(milvus_client, is_first_call: bool):
+    """Wire up RetrievalCheckService for hybrid RAG (Phase 3).
+
+    Only builds the service on the first call to avoid re-initializing
+    the pipeline on every HITL resume round.
+    """
+    if not is_first_call:
+        return None
+
+    knowledge_bm25 = get_knowledge_bm25()
+    if not knowledge_bm25 or not milvus_client:
+        return None
+
+    knowledge_pipeline = RetrievalPipeline(
+        client=milvus_client,
+        collection="knowledge_chunks",
+        bm25_index=knowledge_bm25,
+        vector_top_k=settings.VECTOR_TOP_K,
+        bm25_top_k=settings.BM25_TOP_K,
+        final_top_k=settings.KNOWLEDGE_TOP_K,
+        enable_rerank=True,
+    )
+    return RetrievalCheckService(
+        pipeline=knowledge_pipeline,
+        max_retries=settings.SELF_CHECK_MAX_RETRIES,
+    )
 
 
 interview_graph_service = InterviewGraphService()
