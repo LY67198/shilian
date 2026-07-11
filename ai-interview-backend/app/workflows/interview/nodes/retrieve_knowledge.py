@@ -1,39 +1,39 @@
-"""retrieve_knowledge node — Milvus 知识库 RAG 检索"""
+"""retrieve_knowledge node — delegates to RetrievalCheckService for hybrid RAG"""
 from __future__ import annotations
 
 import logging
 
-from app.llm.embedding import embed_text
-from app.vector_db.collections import knowledge as knowledge_vdb
 from app.workflows.interview.state import InterviewState
 
 logger = logging.getLogger(__name__)
 
 
 async def retrieve_knowledge_node(state: InterviewState) -> dict:
-    """用当前题目检索知识库，返回相关片段作为评分依据"""
+    """用当前题目检索知识库（hybrid pipeline + self-check loop）。
+
+    Delegates to RetrievalCheckService which runs the full hybrid pipeline
+    (vector + BM25 + RRF + rerank) with self-check query rewriting.
+
+    The check service instance is stored in state.custom.retrieval_check_service
+    (set up at interview start in InterviewGraphService).
+    """
     current_question = state.get("current_question", "")
-    knowledge_context: list[str] = []
 
     if not current_question:
-        return {"knowledge_context": knowledge_context}
+        return {"knowledge_context": []}
 
-    custom = state.get("custom") or {}
-    milvus_client = custom.get("milvus_client")
-
-    if not milvus_client:
-        logger.warning("Milvus client 不可用，跳过知识库检索")
-        return {"knowledge_context": knowledge_context}
+    check_service = (state.get("custom") or {}).get("retrieval_check_service")
+    if check_service is None:
+        logger.warning("RetrievalCheckService 不可用，回退到空 knowledge_context")
+        return {"knowledge_context": []}
 
     try:
-        query_vec = await embed_text(current_question)
-        chunks = knowledge_vdb.search(
-            client=milvus_client,
-            query_vector=query_vec,
-            top_k=3,
+        result = await check_service.check_and_retrieve(
+            query=current_question,
         )
-        knowledge_context = [c.get("content", "") for c in chunks if c.get("content")]
+        return {
+            "knowledge_context": result.final_context,
+        }
     except Exception as e:
         logger.warning(f"知识库 RAG 检索失败，跳过注入: {e}")
-
-    return {"knowledge_context": knowledge_context}
+        return {"knowledge_context": []}
