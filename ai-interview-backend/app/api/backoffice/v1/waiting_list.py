@@ -4,8 +4,9 @@ from typing import Optional, Literal
 from datetime import datetime
 
 from app.db.session import get_db
+from app.deps import get_backoffice_waiting_list_service
 from app.schemas.backoffice.waiting_list import WaitingListItemResponse
-from app.services.backoffice.waiting_list import waiting_list_service
+from app.services.backoffice.waiting_list import WaitingListService
 from app.api.backoffice.deps import get_current_admin
 from app.models.admin import Admin
 from app.schemas.paginator import Paginator
@@ -29,7 +30,8 @@ async def list_waiting_list(
     sort_by: str = Query('created_at', description="Sort field: 'created_at', 'email', 'university'"),
     sort_order: str = Query('desc', description="Sort order: 'asc' or 'desc'"),
     db: AsyncSession = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin)
+    current_admin: Admin = Depends(get_current_admin),
+    waiting_list_service: WaitingListService = Depends(get_backoffice_waiting_list_service),
 ):
     """
     Get waiting list with pagination, search, and filters

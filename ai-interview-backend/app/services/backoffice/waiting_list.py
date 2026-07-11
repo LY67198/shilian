@@ -6,8 +6,8 @@ from datetime import datetime
 
 
 class WaitingListService:
-    @staticmethod
     async def get_waiting_list_query(
+        self,
         db: AsyncSession,
         search: Optional[str] = None,
         search_type: Optional[str] = 'all',

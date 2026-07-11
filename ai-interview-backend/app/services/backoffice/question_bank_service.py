@@ -33,8 +33,7 @@ class QuestionBankService:
 
     # ── CRUD ────────────────────────────────────────────────────────────
 
-    @staticmethod
-    async def create(db: AsyncSession, data: dict) -> QuestionBank:
+    async def create(self, db: AsyncSession, data: dict) -> QuestionBank:
         """新增题目：PG 拿 id → Milvus 写 embedding；Milvus 失败回滚 PG"""
         emb_text = _build_embedding_text(data["question"], data.get("reference_answer"))
 
@@ -82,12 +81,10 @@ class QuestionBankService:
             raise
         return q
 
-    @staticmethod
-    async def get_by_id(db: AsyncSession, question_id: int) -> Optional[QuestionBank]:
+    async def get_by_id(self, db: AsyncSession, question_id: int) -> Optional[QuestionBank]:
         return await db.get(QuestionBank, question_id)
 
-    @staticmethod
-    async def update(db: AsyncSession, question_id: int, data: dict) -> Optional[QuestionBank]:
+    async def update(self, db: AsyncSession, question_id: int, data: dict) -> Optional[QuestionBank]:
         """更新题目；若改题面/答案则重新向量化（同步写 PG + Milvus）"""
         q = await db.get(QuestionBank, question_id)
         if not q:
@@ -130,8 +127,7 @@ class QuestionBankService:
             logger.info(f"题目 {q.id} 已更新并重新向量化")
         return q
 
-    @staticmethod
-    async def delete(db: AsyncSession, question_id: int) -> bool:
+    async def delete(self, db: AsyncSession, question_id: int) -> bool:
         """删除：Milvus + PG 双删"""
         # 先 Milvus（避免 PG 删了但 Milvus 还有）
         try:
@@ -146,8 +142,7 @@ class QuestionBankService:
         await db.commit()
         return result.rowcount > 0
 
-    @staticmethod
-    async def toggle(db: AsyncSession, question_id: int, is_active: bool) -> bool:
+    async def toggle(self, db: AsyncSession, question_id: int, is_active: bool) -> bool:
         """启用/禁用（PG only，Milvus 端按 is_active 过滤由调用方决定）"""
         result = await db.execute(
             update(QuestionBank)
@@ -157,8 +152,8 @@ class QuestionBankService:
         await db.commit()
         return result.rowcount > 0
 
-    @staticmethod
     async def get_list(
+        self,
         db: AsyncSession,
         page: int = 1,
         size: int = 20,
@@ -194,8 +189,7 @@ class QuestionBankService:
 
     # ── 向量化 ──────────────────────────────────────────────────────────
 
-    @staticmethod
-    async def embed_question(db: AsyncSession, question_id: int) -> bool:
+    async def embed_question(self, db: AsyncSession, question_id: int) -> bool:
         """单题重新向量化（PG embedding_text + Milvus embedding）"""
         q = await db.get(QuestionBank, question_id)
         if not q:
@@ -223,8 +217,7 @@ class QuestionBankService:
         ])
         return True
 
-    @staticmethod
-    def batch_embed_sync(question_ids: List[int]) -> dict:
+    def batch_embed_sync(self, question_ids: List[int]) -> dict:
         """同步批量向量化（Celery 调用）"""
         import asyncio
         from app.db.base import get_session_local
@@ -266,8 +259,7 @@ class QuestionBankService:
         logger.info(f"批量向量化完成：{count} 题")
         return {"embedded": count}
 
-    @staticmethod
-    def reindex_all_sync() -> dict:
+    def reindex_all_sync(self) -> dict:
         """全量重建 embedding（升级模型时使用）"""
         import asyncio
         from app.db.base import get_session_local
@@ -282,7 +274,7 @@ class QuestionBankService:
             total = 0
             for i in range(0, len(ids), batch_size):
                 batch_ids = ids[i: i + batch_size]
-                result = QuestionBankService.batch_embed_sync(batch_ids)
+                result = self.batch_embed_sync(batch_ids)
                 total += result["embedded"]
             return total
 
@@ -291,8 +283,8 @@ class QuestionBankService:
 
     # ── 检索 ─────────────────────────────────────────────────────────────
 
-    @staticmethod
     async def retrieve_questions(
+        self,
         query: str,
         db: AsyncSession = None,  # noqa 保留参数仅为向后兼容（不再用）
         k: int = 20,
@@ -312,8 +304,7 @@ class QuestionBankService:
             min_score=min_score,
         )
 
-    @staticmethod
-    async def increment_use_count(db: AsyncSession, question_ids: List[int]) -> None:
+    async def increment_use_count(self, db: AsyncSession, question_ids: List[int]) -> None:
         """面试选题后增加使用次数（PG only）"""
         if not question_ids:
             return
@@ -324,8 +315,7 @@ class QuestionBankService:
         )
         await db.commit()
 
-    @staticmethod
-    async def get_stats(db: AsyncSession) -> dict:
+    async def get_stats(self, db: AsyncSession) -> dict:
         """题库统计（PG only — Milvus 端所有有效记录都有 embedding）"""
         by_category = (
             await db.execute(
@@ -356,3 +346,6 @@ class QuestionBankService:
             "by_difficulty": {row[0]: row[1] for row in by_difficulty},
             "top_used": [{"id": r[0], "question": r[1][:50], "use_count": r[2]} for r in top_used],
         }
+
+
+question_bank_service = QuestionBankService()

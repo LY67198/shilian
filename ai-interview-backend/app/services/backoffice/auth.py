@@ -43,8 +43,7 @@ async def _bo_clear_login_attempts(email: str) -> None:
 
 
 class BackofficeAuthService(AuthBase):
-    @staticmethod
-    async def authenticate_admin(db: AsyncSession, email: str, password: str) -> Optional[Admin]:
+    async def authenticate_admin(self, db: AsyncSession, email: str, password: str) -> Optional[Admin]:
         """管理员认证"""
         admin_query = select(Admin).where(Admin.email == email)
         result = await db.execute(admin_query)
@@ -54,14 +53,13 @@ class BackofficeAuthService(AuthBase):
             return None
         return admin
 
-    @staticmethod
-    async def login(db: AsyncSession, email: str, password: str) -> Dict:
+    async def login(self, db: AsyncSession, email: str, password: str) -> Dict:
         """管理员登录"""
         # 登录限流：超过阈值直接拒绝，避免暴力破解
         await _bo_check_login_rate_limit(email)
 
         async with transaction(db):
-            admin = await BackofficeAuthService.authenticate_admin(db, email, password)
+            admin = await self.authenticate_admin(db, email, password)
             if not admin:
                 await _bo_increment_login_failures(email)
                 raise APIException(status_code=400, message="Incorrect email or password")
@@ -103,8 +101,7 @@ class BackofficeAuthService(AuthBase):
                 "token_type": "bearer"
             }
 
-    @staticmethod
-    async def refresh_token(db: AsyncSession, refresh_token: str) -> Dict:
+    async def refresh_token(self, db: AsyncSession, refresh_token: str) -> Dict:
         """刷新管理员token"""
         payload = AuthBase.verify_token(refresh_token, scope="refresh")
         if not payload:
@@ -131,8 +128,7 @@ class BackofficeAuthService(AuthBase):
         )
         return {"access_token": access_token, "token_type": "bearer"}
 
-    @staticmethod
-    async def logout(db: AsyncSession, refresh_token: str) -> None:
+    async def logout(self, db: AsyncSession, refresh_token: str) -> None:
         """管理员登出"""
         payload = AuthBase.verify_token(refresh_token, scope="backoffice")
         if not payload:

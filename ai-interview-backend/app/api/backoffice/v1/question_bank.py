@@ -8,6 +8,7 @@ from typing import Optional, Literal
 
 from app.db.session import get_db
 from app.api.backoffice.deps import get_current_admin
+from app.deps import get_question_bank_service
 from app.models.admin import Admin
 from app.schemas.response import ApiResponse
 from app.schemas.backoffice.question_bank import (
@@ -58,9 +59,10 @@ async def list_questions(
     search: Optional[str] = Query(None, description="题面/参考答案关键字"),
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
     """题库列表（分页 + 筛选）"""
-    result = await QuestionBankService.get_list(
+    result = await question_bank_service.get_list(
         db=db, page=page, size=per_page,
         category=category, position_tag=position_tag,
         difficulty=difficulty, is_active=is_active, search=search,
@@ -80,11 +82,12 @@ async def create_question(
     payload: QuestionBankCreate,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
     """新增题目（保存后自动向量化）"""
     data = payload.model_dump()
     data["created_by"] = current_admin.id
-    q = await QuestionBankService.create(db, data)
+    q = await question_bank_service.create(db, data)
     return ApiResponse.success(_to_response(q), message="创建成功")
 
 
@@ -94,9 +97,10 @@ async def create_question(
 async def get_question_stats(
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
     """题库统计（总数、按分类/难度分布、热门题）"""
-    stats = await QuestionBankService.get_stats(db)
+    stats = await question_bank_service.get_stats(db)
     return ApiResponse.success(stats)
 
 
@@ -105,8 +109,9 @@ async def get_question(
     question_id: int,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
-    q = await QuestionBankService.get_by_id(db, question_id)
+    q = await question_bank_service.get_by_id(db, question_id)
     if not q:
         return ApiResponse.failed("题目不存在", body_code=404, http_code=404)
     return ApiResponse.success(_to_response(q))
@@ -120,12 +125,13 @@ async def update_question(
     payload: QuestionBankUpdate,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
     """更新题目（若改了 question/reference_answer 则自动重新向量化）"""
     data = payload.model_dump(exclude_unset=True)
     if not data:
         return ApiResponse.failed("没有任何更新字段", body_code=400)
-    q = await QuestionBankService.update(db, question_id, data)
+    q = await question_bank_service.update(db, question_id, data)
     if not q:
         return ApiResponse.failed("题目不存在", body_code=404, http_code=404)
     return ApiResponse.success(_to_response(q), message="更新成功")
@@ -138,8 +144,9 @@ async def delete_question(
     question_id: int,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
-    ok = await QuestionBankService.delete(db, question_id)
+    ok = await question_bank_service.delete(db, question_id)
     if not ok:
         return ApiResponse.failed("题目不存在", body_code=404, http_code=404)
     return ApiResponse.success(message="删除成功")
@@ -153,8 +160,9 @@ async def toggle_question(
     payload: QuestionBankToggle,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
-    ok = await QuestionBankService.toggle(db, question_id, payload.is_active)
+    ok = await question_bank_service.toggle(db, question_id, payload.is_active)
     if not ok:
         return ApiResponse.failed("题目不存在", body_code=404, http_code=404)
     return ApiResponse.success(message="状态已更新")
@@ -217,9 +225,10 @@ async def test_retrieve_questions(
     payload: QuestionBankTestRetrieve,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    question_bank_service: QuestionBankService = Depends(get_question_bank_service),
 ):
     """测试题库召回效果（输入岗位/技能，看返回的 Top N 题）"""
-    items = await QuestionBankService.retrieve_questions(
+    items = await question_bank_service.retrieve_questions(
         query=payload.query,
         db=db,
         k=payload.k,

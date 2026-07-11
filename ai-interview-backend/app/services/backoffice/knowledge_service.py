@@ -58,8 +58,8 @@ def _hash_content(text: str) -> str:
 
 class KnowledgeService:
 
-    @staticmethod
     async def ingest_document(
+        self,
         doc_id: int,
         file_bytes: bytes,
         file_type: str,
@@ -146,17 +146,15 @@ class KnowledgeService:
             logger.error(f"文档 {doc_id} 索引失败: {e}")
             raise
 
-    @staticmethod
-    async def ingest_from_path(doc_id: int, file_path: str, file_type: str) -> int:
+    async def ingest_from_path(self, doc_id: int, file_path: str, file_type: str) -> int:
         """从本地磁盘路径摄入（用于 BackgroundTasks，自带独立 DB 会话）"""
         from app.db.base import get_session_local
         with open(file_path, "rb") as f:
             file_bytes = f.read()
         async with get_session_local()() as db:
-            return await KnowledgeService.ingest_document(doc_id, file_bytes, file_type, db)
+            return await self.ingest_document(doc_id, file_bytes, file_type, db)
 
-    @staticmethod
-    async def delete_document(doc_id: int, db: AsyncSession) -> None:
+    async def delete_document(self, doc_id: int, db: AsyncSession) -> None:
         """删除文档及其所有 chunk（双删：PG + Milvus）"""
         # 先 Milvus（如果失败，至少 PG 还能查出来）
         try:
@@ -171,8 +169,8 @@ class KnowledgeService:
         )
         await db.commit()
 
-    @staticmethod
     async def reindex_document(
+        self,
         doc_id: int,
         file_bytes: bytes,
         file_type: str,
@@ -189,10 +187,10 @@ class KnowledgeService:
             delete(KnowledgeChunk).where(KnowledgeChunk.document_id == doc_id)
         )
         await db.commit()
-        return await KnowledgeService.ingest_document(doc_id, file_bytes, file_type, db)
+        return await self.ingest_document(doc_id, file_bytes, file_type, db)
 
-    @staticmethod
     async def retrieve_chunks(
+        self,
         query: str,
         db: AsyncSession = None,  # noqa 保留参数仅为向后兼容（不再用）
         k: int = 4,
@@ -214,8 +212,8 @@ class KnowledgeService:
             min_score=min_score,
         )
 
-    @staticmethod
     async def get_document_list(
+        self,
         db: AsyncSession,
         page: int = 1,
         size: int = 20,
@@ -237,3 +235,6 @@ class KnowledgeService:
         stmt = stmt.order_by(KnowledgeDocument.created_at.desc()).offset((page - 1) * size).limit(size)
         items = (await db.execute(stmt)).scalars().all()
         return {"items": items, "total": total, "page": page, "size": size}
+
+
+knowledge_service = KnowledgeService()
