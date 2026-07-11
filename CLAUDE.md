@@ -229,7 +229,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
   - ✅ Task 8 — Self-check YAML prompts（2 个）
   - ✅ Task 9 — RetrievalCheckState
   - [x] Tasks 10-16 — self-check nodes + graph + 集成 + eval + 测试（完成 2026-07-11）
-- [ ] **Phase 4** — 多 Agent + 可观测性：LangSmith tracing + 3 Agent 拆分（出题/评分/报告）+ Repository 补全 + RAGAS 持续评估
+- [x] **Phase 4** — 多 Agent + 可观测性（**已完成 2026-07-11**）：Agent 类提取 + Repository 补全 + RAG trace + RAGAS LangSmith + service 去 static
 
 ### Phase 1 实施记录
 
@@ -274,11 +274,36 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 **P1 遗留更新**（增量改进，不阻塞）：
 - 5 个 repo 只建了 1 个示例（interview_repo）— 其他 4 个（user / admin / question_bank / knowledge）— **Phase 4 做**
 
+### Phase 4 实施记录
+
+**Agent 类提取**：
+- `app/agents/` — BaseAgent + QuestionAgent + EvaluatorAgent + ReportAgent
+- 3 个新 YAML prompt：question_agent / evaluator_agent / report_agent
+- evaluate_node / generate_report_node 委托 Agent 类，不再直接调 LLM
+- InterviewGraphService 通过 state.custom 注入 agent 实例
+
+**Repository 补全**：
+- `question_bank_repo.py` — search_by_position / list_by_position / increment_use_count
+- `knowledge_repo.py` — list_by_document / get_by_chunk_id / full_text_search
+- `interview_repo.py` — get_by_id_with_messages / delete_cascade
+
+**RAG 链路 Tracing**：
+- `tracing.py` — trace_span context manager（LangSmith RunTree 子 span）
+- `pipeline.py` — 4 步检索步骤各包一层 trace_span
+
+**RAGAS + LangSmith**：
+- `eval/scripts/upload_golden_set.py` — 同步 golden_set.json 到 LangSmith dataset
+- `eval/scripts/eval_ragas.py` — --upload 和 --experiment-name 参数
+
+**Service 去 @staticmethod**：
+- 14 个 service 文件全部改为实例方法 + Depends 注入
+- `app/deps.py` — 统一 factory 函数（agent + service）
+
 ### 已知技术债（不阻塞，按 Phase 解决）
 
-- `interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock — **Phase 3+ 逐步去静态**
-- position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML — **Phase 4 统一**
-- Graph nodes 通过 `state.custom.db` 传 DB session，非标准 DI — **Phase 3+ 改用 FastAPI Depends 注入**
+- [x] ~~`interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock~~ — **Phase 4 已解决**
+- position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML — **后续优化**
+- Graph nodes 通过 `state.custom.db` 传 DB session，非标准 DI — **后续优化**
 
 ### Milvus 关键 bug 已修（Phase 0-1）
 - ✅ service 层不再调已删除的 `KnowledgeChunk.embedding.cosine_distance` 列

@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from app.agents.base import BaseAgent
-from app.workflows.interview.state import ScoreResult
+
+if TYPE_CHECKING:
+    from app.workflows.interview.state import ScoreResult
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +28,14 @@ class EvaluatorAgent(BaseAgent):
         reference_answer: str | None = None,
         key_points: list | None = None,
         knowledge_context: list | None = None,
-    ) -> ScoreResult:
+    ) -> "ScoreResult":
         """评估候选人的回答
 
         Returns:
             ScoreResult: score (0-10), feedback (str), follow_up (bool)
         """
+        from app.workflows.interview.state import ScoreResult  # noqa: F811
+
         # 构造对话历史文本
         history_text = ""
         for msg in (chat_history or [])[-6:]:
