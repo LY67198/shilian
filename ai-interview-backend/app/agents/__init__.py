@@ -6,5 +6,8 @@ Agent 类位于 LangChain 层（app/agents/），被 workflow nodes 调用，
 """
 
 from app.agents.base import BaseAgent
+from app.agents.question_agent import QuestionAgent
+from app.agents.evaluator_agent import EvaluatorAgent
+from app.agents.report_agent import ReportAgent
 
-__all__ = ["BaseAgent"]
+__all__ = ["BaseAgent", "QuestionAgent", "EvaluatorAgent", "ReportAgent"]

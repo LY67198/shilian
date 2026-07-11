@@ -3,9 +3,12 @@
 集中管理所有 service 和 agent 的工厂函数，供 API 层和 workflow nodes 使用。
 """
 
+from app.repositories.question_bank_repo import question_bank_repo
+
+
 def get_question_agent():
     from app.agents.question_agent import QuestionAgent
-    return QuestionAgent()
+    return QuestionAgent(question_bank_repo=question_bank_repo)
 
 
 def get_evaluator_agent():
