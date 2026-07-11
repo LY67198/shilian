@@ -40,6 +40,7 @@ services:
       - ./logs:/app/logs
       - ./uploads:/app/uploads
       - ./tests:/app/tests
+      - ./eval:/app/eval
       - ./pytest.ini:/app/pytest.ini
     depends_on:
       postgres:
@@ -59,6 +60,7 @@ services:
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
+      - ./eval:/app/eval
     networks:
       - app-network
 
