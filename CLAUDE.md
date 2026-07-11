@@ -212,7 +212,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - 品牌升级："AI Interview" → "试炼 (MockPilot)"，容器名 / PROJECT_NAME / 前端 title 全部更新
 - **Phase 1 基础设施完成**：LLM 工厂 / Prompt YAML / Repository 骨架 / workflows/_shared 全部就位（详见下方"Phase 1 实施记录"）
 - **Phase 2 实施完成**（2026-07-10）：核心面试 LangGraph 化 + 4 个 P0 bug 修复 + YAML prompt 激活 + JSON 解析兜底
-- **Phase 3 设计完成**（2026-07-10）：RAG 管线升级 Spec + 16 任务实施计划，待执行。含 app/retrieval/ 模块（vector + BM25 + RRF + rerank + pipeline）、app/workflows/retrieval_check/ 自检循环、eval/ 评估框架（golden set + RAGAS）
+- **Phase 3 完成**（2026-07-11）：RAG 管线升级 Spec + 16 任务全部实施完成。含 app/retrieval/ 模块（vector + BM25 + RRF + rerank + pipeline）、app/workflows/retrieval_check/ 自检循环、eval/ 评估框架（golden set + RAGAS）
 
 ### 重构路线（4 个 Phase）
 
@@ -225,7 +225,6 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
   - ✅ 设计 Spec：`docs/superpowers/specs/2026-07-10-phase-3-rag-upgrade-design.md`
   - ✅ 实施计划：`docs/superpowers/plans/2026-07-10-phase-3-rag-upgrade-implementation.md`（16 tasks，20 new files + 4 modified + 2 test files）
   - 技术选型：rank-bm25 (character bigrams) + DashScope gte-rerank + RAGAS 5 metrics
-  - **实施中**（Subagent-Driven，2026-07-10 启动）
   - ✅ Tasks 1-7 — `app/retrieval/` 模块完成（SearchResult + vector + BM25 + RRF + rerank + pipeline）
   - ✅ Task 8 — Self-check YAML prompts（2 个）
   - ✅ Task 9 — RetrievalCheckState
