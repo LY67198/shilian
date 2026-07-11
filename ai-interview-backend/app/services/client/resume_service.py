@@ -5,7 +5,7 @@ from typing import Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.resume import Resume
-from app.services.client.ai_service import AIService
+from app.services.client.ai_service import ai_service
 from app.exceptions.http_exceptions import NotFoundError, ValidationError, APIException
 
 logger = logging.getLogger(__name__)
@@ -16,9 +16,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 class ResumeService:
+    """简历服务，提供简历上传、PDF 解析、AI 解析分析和简历管理功能。"""
 
-    @staticmethod
     async def upload_and_parse(
+        self,
         db: AsyncSession,
         user_id: int,
         file_content: bytes,
@@ -45,7 +46,7 @@ class ResumeService:
 
         # 从 PDF 中提取文本
         try:
-            resume_text = ResumeService._extract_pdf_text(file_path)
+            resume_text = self._extract_pdf_text(file_path)
             if not resume_text.strip():
                 raise ValidationError(message="无法从 PDF 中提取文本内容")
         except Exception as e:
@@ -55,11 +56,11 @@ class ResumeService:
 
         # 调用 AI 解析简历
         try:
-            parsed = await AIService.parse_resume(resume_text)
+            parsed = await ai_service.parse_resume(resume_text)
             resume.parsed_content = json.dumps(parsed, ensure_ascii=False)
 
             # 调用 AI 分析简历质量
-            analysis = await AIService.analyze_resume(parsed, target_position)
+            analysis = await ai_service.analyze_resume(parsed, target_position)
             resume.analysis = json.dumps(analysis, ensure_ascii=False)
 
             resume.status = "completed"
@@ -77,8 +78,7 @@ class ResumeService:
             "message": "简历上传并解析成功"
         }
 
-    @staticmethod
-    def _extract_pdf_text(file_path: str) -> str:
+    def _extract_pdf_text(self, file_path: str) -> str:
         """从 PDF 文件中提取文本内容"""
         import pdfplumber
         text = ""
@@ -89,8 +89,7 @@ class ResumeService:
                     text += page_text + "\n"
         return text
 
-    @staticmethod
-    async def get_resume(db: AsyncSession, resume_id: int, user_id: int) -> Dict:
+    async def get_resume(self, db: AsyncSession, resume_id: int, user_id: int) -> Dict:
         """根据 ID 获取简历详情"""
         query = select(Resume).where(
             Resume.id == resume_id,
@@ -126,8 +125,7 @@ class ResumeService:
             "created_at": resume.created_at.isoformat() if resume.created_at else None
         }
 
-    @staticmethod
-    async def get_user_resumes(db: AsyncSession, user_id: int) -> list:
+    async def get_user_resumes(self, db: AsyncSession, user_id: int) -> list:
         """获取用户的所有简历列表"""
         query = select(Resume).where(
             Resume.user_id == user_id
@@ -146,8 +144,7 @@ class ResumeService:
             for r in resumes
         ]
 
-    @staticmethod
-    async def delete_resume(db: AsyncSession, resume_id: int, user_id: int) -> None:
+    async def delete_resume(self, db: AsyncSession, resume_id: int, user_id: int) -> None:
         """删除简历（含物理文件）。已关联面试的简历不允许删除。
         如简历解析尚未完成（parsing/pending），可以安全删除。"""
         query = select(Resume).where(

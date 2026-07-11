@@ -1,17 +1,17 @@
 import json
 import logging
-from decimal import Decimal
 from typing import Dict, List
+
+from sqlalchemy import select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
+from app.core.config import settings
+from app.exceptions.http_exceptions import NotFoundError, ValidationError
 from app.models.interview import Interview
 from app.models.interview_message import InterviewMessage
 from app.models.resume import Resume
-from app.services.client.ai_service import AIService
-from app.services.backoffice.question_bank_service import QuestionBankService
-from app.services.backoffice.knowledge_service import KnowledgeService
-from app.core.config import settings
-from app.exceptions.http_exceptions import NotFoundError, ValidationError
+from app.services.backoffice.question_bank_service import question_bank_service
+from app.services.client.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,10 @@ def _build_retrieval_query(target_position: str, parsed_resume: dict) -> str:
 
 
 class InterviewService:
+    """面试服务，负责启动面试、RAG 出题、获取评估报告和面试记录管理。"""
 
-    @staticmethod
     async def _generate_questions_with_rag(
+        self,
         db: AsyncSession,
         parsed_resume: dict,
         target_position: str,
@@ -39,51 +40,108 @@ class InterviewService:
         total_questions: int,
     ) -> list:
         """
-        RAG 出题核心：
-        1. 用岗位 + 简历技能构造 query，向题库做向量检索
-        2. 根据召回数量分支：
-           - 充分（>= total）→ AI 选题 + 微调（select_and_adapt_questions）
-           - 不足（0 < cnt < total）→ AI 兜底补全（generate_with_seeds）
-           - 为空（=0）→ 完全 AI 生成（fallback to legacy generate_questions）
+        Phase 3 RAG 出题：使用 RetrievalPipeline（vector + BM25 + RRF + rerank）。
+
+        优先级：hybrid recall → AI select → AI seed → pure AI generate
         """
+        from app.retrieval.bm25_lifecycle import get_question_bank_bm25
+        from app.retrieval.pipeline import RetrievalPipeline
+        from app.vector_db import get_milvus_client
+
         query = _build_retrieval_query(target_position, parsed_resume)
         recall_k = total_questions * settings.QUESTION_BANK_RECALL_FACTOR
 
-        # 题库 RAG 检索包裹 try/except：DashScope embedding 服务或 pgvector 出错时
-        # 降级到纯 AI 生成，避免面试启动直接崩
         try:
-            candidates = await QuestionBankService.retrieve_questions(
-                query=query,
-                db=db,
-                k=recall_k,
-                position_tag=target_position,
-                difficulty=difficulty,
-                min_score=settings.QUESTION_BANK_MIN_SCORE,
-            )
-            # 召回失败时兜底：放宽 position_tag 限制再试一次（命中率更高）
-            if len(candidates) < total_questions:
-                relaxed = await QuestionBankService.retrieve_questions(
+            bm25_index = get_question_bank_bm25()
+            milvus_client = get_milvus_client()
+
+            if bm25_index and milvus_client:
+                pipeline = RetrievalPipeline(
+                    client=milvus_client,
+                    collection="question_bank",
+                    bm25_index=bm25_index,
+                    vector_top_k=settings.VECTOR_TOP_K,
+                    bm25_top_k=settings.BM25_TOP_K,
+                    final_top_k=recall_k,
+                    enable_rerank=True,
+                )
+                results = await pipeline.search(
+                    query=query,
+                    filters={
+                        "position_tag": target_position,
+                        "difficulty": difficulty,
+                        "min_score": settings.QUESTION_BANK_MIN_SCORE,
+                    },
+                )
+                # Convert SearchResult to the dict format expected by AI service
+                candidates = []
+                for r in results:
+                    candidates.append({
+                        "id": r.id,
+                        "question": r.metadata.get("question", r.content),
+                        "reference_answer": r.metadata.get("reference_answer", ""),
+                        "key_points": r.metadata.get("key_points", []),
+                        "difficulty": r.metadata.get("difficulty", difficulty),
+                        "position_tag": r.metadata.get("position_tag", target_position),
+                        "similarity": r.score,
+                        "source": "from_bank",
+                    })
+
+                # Fallback: relax position_tag if insufficient
+                if len(candidates) < total_questions:
+                    relaxed_results = await pipeline.search(
+                        query=query,
+                        filters={
+                            "difficulty": difficulty,
+                            "min_score": settings.QUESTION_BANK_MIN_SCORE,
+                        },
+                    )
+                    seen = {c["id"] for c in candidates}
+                    for r in relaxed_results:
+                        if r.id not in seen:
+                            candidates.append({
+                                "id": r.id,
+                                "question": r.metadata.get("question", r.content),
+                                "reference_answer": r.metadata.get("reference_answer", ""),
+                                "key_points": r.metadata.get("key_points", []),
+                                "difficulty": r.metadata.get("difficulty", difficulty),
+                                "position_tag": r.metadata.get("position_tag", target_position),
+                                "similarity": r.score,
+                                "source": "from_bank",
+                            })
+            else:
+                # Fallback: BM25 not available, use old vector-only path
+                candidates = await question_bank_service.retrieve_questions(
                     query=query,
                     db=db,
                     k=recall_k,
-                    position_tag=None,
+                    position_tag=target_position,
                     difficulty=difficulty,
                     min_score=settings.QUESTION_BANK_MIN_SCORE,
                 )
-                seen = {c["id"] for c in candidates}
-                for c in relaxed:
-                    if c["id"] not in seen:
-                        candidates.append(c)
+                if len(candidates) < total_questions:
+                    relaxed = await question_bank_service.retrieve_questions(
+                        query=query,
+                        db=db,
+                        k=recall_k,
+                        position_tag=None,
+                        difficulty=difficulty,
+                        min_score=settings.QUESTION_BANK_MIN_SCORE,
+                    )
+                    seen = {c["id"] for c in candidates}
+                    for c in relaxed:
+                        if c["id"] not in seen:
+                            candidates.append(c)
         except Exception as e:
-            logger.error(f"[RAG出题] 题库检索异常，降级到纯 AI 生成: {e}")
+            logger.error(f"[RAG出题] Hybrid retrieval failed, falling back to pure AI: {e}")
             candidates = []
 
         cnt = len(candidates)
-        logger.info(f"[RAG出题] 题库召回 {cnt} 题，目标 {total_questions} 题")
+        logger.info(f"[RAG出题] Hybrid recall: {cnt} questions, target: {total_questions}")
 
         if cnt >= total_questions:
             logger.info(f"[RAG出题] 走【题库充分】分支")
-            questions = await AIService.select_and_adapt_questions(
+            questions = await ai_service.select_and_adapt_questions(
                 candidates=candidates,
                 parsed_resume=parsed_resume,
                 target_position=target_position,
@@ -92,7 +150,7 @@ class InterviewService:
             )
         elif cnt > 0:
             logger.info(f"[RAG出题] 走【AI 兜底补全】分支（题库 {cnt} 题 + AI 补 {total_questions - cnt} 题）")
-            questions = await AIService.generate_with_seeds(
+            questions = await ai_service.generate_with_seeds(
                 seed_questions=candidates,
                 parsed_resume=parsed_resume,
                 target_position=target_position,
@@ -101,21 +159,20 @@ class InterviewService:
             )
         else:
             logger.warning(f"[RAG出题] 题库为空，走【纯 AI 生成】兜底分支")
-            questions = await AIService.generate_questions(
+            questions = await ai_service.generate_questions(
                 parsed_resume=parsed_resume,
                 target_position=target_position,
                 difficulty=difficulty,
                 count=total_questions,
             )
-            # 给所有题打上 source 标记
             for q in questions:
                 q.setdefault("source", "ai_fallback")
                 q.setdefault("bank_id", None)
 
         return questions
 
-    @staticmethod
     async def start_interview(
+        self,
         db: AsyncSession,
         user_id: int,
         resume_id: int,
@@ -137,10 +194,14 @@ class InterviewService:
         if resume.status != "completed":
             raise ValidationError(message="简历尚未解析完成")
 
-        parsed_resume = json.loads(resume.parsed_content)
+        try:
+            parsed_resume = json.loads(resume.parsed_content)
+        except json.JSONDecodeError:
+            logger.error(f"简历 parsed_content 不是有效 JSON: resume_id={resume.id}")
+            raise ValidationError(message="简历数据异常，请重新上传")
 
         # ── RAG 出题流程：题库召回优先 + AI 兜底 ──────────────────────
-        questions = await InterviewService._generate_questions_with_rag(
+        questions = await self._generate_questions_with_rag(
             db=db,
             parsed_resume=parsed_resume,
             target_position=target_position,
@@ -151,7 +212,7 @@ class InterviewService:
         # 题库选中题目，累加 use_count
         bank_ids = [q.get("bank_id") for q in questions if q.get("bank_id")]
         if bank_ids:
-            await QuestionBankService.increment_use_count(db, bank_ids)
+            await question_bank_service.increment_use_count(db, bank_ids)
 
         # 创建面试记录
         interview = Interview(
@@ -186,332 +247,8 @@ class InterviewService:
             "total_questions": total_questions
         }
 
-    @staticmethod
-    async def submit_answer(
-        db: AsyncSession,
-        user_id: int,
-        interview_id: int,
-        answer: str
-    ) -> Dict:
-        """提交当前题目的回答并获取 AI 评估"""
-        # 获取面试记录
-        query = select(Interview).where(
-            Interview.id == interview_id,
-            Interview.user_id == user_id
-        )
-        result = await db.execute(query)
-        interview = result.scalar_one_or_none()
-
-        if not interview:
-            raise NotFoundError(message="面试记录不存在")
-        if interview.status == "completed":
-            raise ValidationError(message="面试已结束")
-
-        # 获取简历上下文
-        resume_query = select(Resume).where(Resume.id == interview.resume_id)
-        resume_result = await db.execute(resume_query)
-        resume = resume_result.scalar_one_or_none()
-        parsed_resume = json.loads(resume.parsed_content) if resume and resume.parsed_content else {}
-
-        # 获取对话历史
-        msg_query = select(InterviewMessage).where(
-            InterviewMessage.interview_id == interview_id
-        ).order_by(InterviewMessage.id)
-        msg_result = await db.execute(msg_query)
-        messages = msg_result.scalars().all()
-        chat_history = [{"role": m.role, "content": m.content} for m in messages]
-
-        # 当前题目
-        current_index = interview.current_question_index
-        questions = interview.questions_data
-        current_question = questions[current_index]["question"]
-        # 题库题携带的 reference_answer / key_points 用作评分依据
-        current_ref_answer = questions[current_index].get("reference_answer")
-        current_key_points = questions[current_index].get("key_points")
-
-        # 保存候选人回答
-        candidate_msg = InterviewMessage(
-            interview_id=interview_id,
-            role="candidate",
-            content=answer,
-            question_index=current_index
-        )
-        db.add(candidate_msg)
-
-        # 知识库 RAG 增强：用当前题干检索相关知识片段，注入评分 Prompt 作为补充依据
-        knowledge_context: list[str] = []
-        if settings.KNOWLEDGE_SCORING_ENABLED:
-            try:
-                chunks = await KnowledgeService.retrieve_chunks(
-                    query=current_question, db=db,
-                    k=settings.KNOWLEDGE_TOP_K,
-                    min_score=settings.KNOWLEDGE_MIN_SCORE,
-                )
-                knowledge_context = [c["content"] for c in chunks]
-            except Exception as e:
-                logger.warning(f"知识库 RAG 检索失败，跳过注入: {e}")
-                knowledge_context = []
-
-        # 调用 AI 评估回答
-        evaluation = await AIService.evaluate_answer(
-            question=current_question,
-            answer=answer,
-            resume_context=parsed_resume,
-            chat_history=chat_history,
-            reference_answer=current_ref_answer,
-            key_points=current_key_points,
-            knowledge_context=knowledge_context,
-        )
-
-        score = float(evaluation.get("score", 5.0))
-        feedback = evaluation.get("feedback", "")
-
-        # 更新候选人消息的评分
-        candidate_msg.score = Decimal(str(score))
-        candidate_msg.feedback = feedback
-
-        # 检查是否为最后一题
-        next_index = current_index + 1
-        is_finished = next_index >= interview.total_questions
-
-        response = {
-            "score": score,
-            "feedback": feedback,
-            "question_index": current_index,
-            "is_finished": is_finished,
-            "next_question": None
-        }
-
-        if is_finished:
-            # 生成最终报告
-            interview.status = "completed"
-            interview.current_question_index = next_index
-
-            # 计算总分
-            all_scores = []
-            score_query = select(InterviewMessage).where(
-                InterviewMessage.interview_id == interview_id,
-                InterviewMessage.role == "candidate",
-                InterviewMessage.score.isnot(None)
-            )
-            score_result = await db.execute(score_query)
-            scored_msgs = score_result.scalars().all()
-            all_scores = [float(m.score) for m in scored_msgs]
-            all_scores.append(score)  # 加上当前评分
-
-            overall = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0
-            interview.overall_score = Decimal(str(overall))
-
-            # 生成评估报告
-            qa_data = []
-            for i, q in enumerate(questions):
-                q_msgs = [m for m in messages if m.role == "candidate" and m.question_index == i]
-                qa_data.append({
-                    "question": q["question"],
-                    "answer": q_msgs[0].content if q_msgs else answer if i == current_index else "未回答",
-                    "score": float(q_msgs[0].score) if q_msgs and q_msgs[0].score else score if i == current_index else 0
-                })
-
-            try:
-                report = await AIService.generate_report(
-                    parsed_resume=parsed_resume,
-                    target_position=interview.target_position,
-                    questions_and_scores=qa_data
-                )
-                # 将每题评分加入报告
-                report["question_scores"] = [
-                    {"question": q["question"], "score": qa["score"], "feedback": ""}
-                    for q, qa in zip(questions, qa_data)
-                ]
-                interview.report = json.dumps(report, ensure_ascii=False)
-            except Exception as e:
-                logger.error(f"报告生成失败: {e}")
-                interview.report = json.dumps({"summary": "报告生成失败", "strengths": [], "weaknesses": [], "suggestions": []})
-
-        else:
-            # 进入下一题
-            interview.current_question_index = next_index
-            next_question = questions[next_index]["question"]
-            response["next_question"] = next_question
-
-            # 保存下一题作为面试官消息
-            interviewer_msg = InterviewMessage(
-                interview_id=interview_id,
-                role="interviewer",
-                content=next_question,
-                question_index=next_index
-            )
-            db.add(interviewer_msg)
-
-        await db.commit()
-        return response
-
-    @staticmethod
-    async def submit_answer_stream(
-        db: AsyncSession,
-        user_id: int,
-        interview_id: int,
-        answer: str
-    ):
-        """流式提交回答 - 通过 SSE 逐块推送 AI 评语"""
-        import re
-
-        # 获取面试记录
-        query = select(Interview).where(
-            Interview.id == interview_id,
-            Interview.user_id == user_id
-        )
-        result = await db.execute(query)
-        interview = result.scalar_one_or_none()
-
-        if not interview:
-            yield f"data: {json.dumps({'type': 'error', 'content': '面试记录不存在'})}\n\n"
-            return
-        if interview.status == "completed":
-            yield f"data: {json.dumps({'type': 'error', 'content': '面试已结束'})}\n\n"
-            return
-
-        # 获取简历上下文
-        resume_query = select(Resume).where(Resume.id == interview.resume_id)
-        resume_result = await db.execute(resume_query)
-        resume = resume_result.scalar_one_or_none()
-        parsed_resume = json.loads(resume.parsed_content) if resume and resume.parsed_content else {}
-
-        # 获取对话历史
-        msg_query = select(InterviewMessage).where(
-            InterviewMessage.interview_id == interview_id
-        ).order_by(InterviewMessage.id)
-        msg_result = await db.execute(msg_query)
-        messages = msg_result.scalars().all()
-        chat_history = [{"role": m.role, "content": m.content} for m in messages]
-
-        current_index = interview.current_question_index
-        questions = interview.questions_data
-        current_question = questions[current_index]["question"]
-        # 题库题携带的 reference_answer / key_points 用作评分依据
-        current_ref_answer = questions[current_index].get("reference_answer")
-        current_key_points = questions[current_index].get("key_points")
-
-        # 保存候选人回答
-        candidate_msg = InterviewMessage(
-            interview_id=interview_id,
-            role="candidate",
-            content=answer,
-            question_index=current_index
-        )
-        db.add(candidate_msg)
-        await db.flush()
-
-        # 知识库 RAG 增强：用当前题干检索相关知识片段，注入评分 Prompt 作为补充依据
-        knowledge_context: list[str] = []
-        if settings.KNOWLEDGE_SCORING_ENABLED:
-            try:
-                chunks = await KnowledgeService.retrieve_chunks(
-                    query=current_question, db=db,
-                    k=settings.KNOWLEDGE_TOP_K,
-                    min_score=settings.KNOWLEDGE_MIN_SCORE,
-                )
-                knowledge_context = [c["content"] for c in chunks]
-            except Exception as e:
-                logger.warning(f"知识库 RAG 检索失败，跳过注入: {e}")
-                knowledge_context = []
-
-        # 流式评估回答
-        full_text = ""
-        async for chunk in AIService.evaluate_answer_stream(
-            question=current_question,
-            answer=answer,
-            resume_context=parsed_resume,
-            chat_history=chat_history,
-            reference_answer=current_ref_answer,
-            key_points=current_key_points,
-            knowledge_context=knowledge_context,
-        ):
-            full_text += chunk
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
-
-        # 从流式文本中提取评分
-        score = 5.0
-        feedback = full_text.strip()
-        json_match = re.search(r'\{[^}]*"score"\s*:\s*([\d.]+)[^}]*\}', full_text)
-        if json_match:
-            try:
-                score = float(json_match.group(1))
-                # 从反馈中移除 JSON 块
-                feedback = re.sub(r'```json\s*\{[^}]*\}\s*```', '', feedback).strip()
-                feedback = re.sub(r'\{[^}]*"score"[^}]*\}', '', feedback).strip()
-            except (ValueError, IndexError):
-                pass
-
-        candidate_msg.score = Decimal(str(score))
-        candidate_msg.feedback = feedback[:200]
-
-        # 检查是否为最后一题
-        next_index = current_index + 1
-        is_finished = next_index >= interview.total_questions
-
-        if is_finished:
-            interview.status = "completed"
-            interview.current_question_index = next_index
-
-            # 计算总分
-            all_scores = []
-            score_query = select(InterviewMessage).where(
-                InterviewMessage.interview_id == interview_id,
-                InterviewMessage.role == "candidate",
-                InterviewMessage.score.isnot(None)
-            )
-            score_result = await db.execute(score_query)
-            scored_msgs = score_result.scalars().all()
-            all_scores = [float(m.score) for m in scored_msgs]
-            if candidate_msg.score:
-                all_scores.append(float(candidate_msg.score))
-            overall = round(sum(all_scores) / len(all_scores), 1) if all_scores else 0
-            interview.overall_score = Decimal(str(overall))
-
-            # 生成评估报告
-            qa_data = []
-            for i, q in enumerate(questions):
-                q_msgs = [m for m in messages if m.role == "candidate" and m.question_index == i]
-                qa_data.append({
-                    "question": q["question"],
-                    "answer": q_msgs[0].content if q_msgs else answer if i == current_index else "未回答",
-                    "score": float(q_msgs[0].score) if q_msgs and q_msgs[0].score else score if i == current_index else 0
-                })
-            try:
-                report = await AIService.generate_report(
-                    parsed_resume=parsed_resume,
-                    target_position=interview.target_position,
-                    questions_and_scores=qa_data
-                )
-                report["question_scores"] = [
-                    {"question": q["question"], "score": qa["score"], "feedback": ""}
-                    for q, qa in zip(questions, qa_data)
-                ]
-                interview.report = json.dumps(report, ensure_ascii=False)
-            except Exception as e:
-                logger.error(f"报告生成失败: {e}")
-                interview.report = json.dumps({"summary": "报告生成失败", "strengths": [], "weaknesses": [], "suggestions": []})
-
-            await db.commit()
-            yield f"data: {json.dumps({'type': 'done', 'score': score, 'feedback': feedback[:200], 'is_finished': True, 'question_index': current_index}, ensure_ascii=False)}\n\n"
-        else:
-            # 进入下一题
-            interview.current_question_index = next_index
-            next_question = questions[next_index]["question"]
-
-            interviewer_msg = InterviewMessage(
-                interview_id=interview_id,
-                role="interviewer",
-                content=next_question,
-                question_index=next_index
-            )
-            db.add(interviewer_msg)
-            await db.commit()
-            yield f"data: {json.dumps({'type': 'done', 'score': score, 'feedback': feedback[:200], 'is_finished': False, 'next_question': next_question, 'question_index': current_index}, ensure_ascii=False)}\n\n"
-
-    @staticmethod
     async def get_report(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
@@ -543,8 +280,8 @@ class InterviewService:
             "report": report
         }
 
-    @staticmethod
     async def get_interviews(
+        self,
         db: AsyncSession,
         user_id: int
     ) -> Dict:
@@ -573,8 +310,8 @@ class InterviewService:
             "items": items
         }
 
-    @staticmethod
     async def get_interview_messages(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
@@ -609,15 +346,13 @@ class InterviewService:
             for m in messages
         ]
 
-    @staticmethod
     async def delete_interview(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
     ) -> Dict:
         """删除面试记录及其关联的对话消息"""
-        from sqlalchemy import delete as sql_delete
-
         query = select(Interview).where(
             Interview.id == interview_id,
             Interview.user_id == user_id
@@ -638,13 +373,12 @@ class InterviewService:
 
         return {"message": "面试记录已删除"}
 
-    @staticmethod
     async def delete_interview_admin(
+        self,
         db: AsyncSession,
         interview_id: int
     ) -> Dict:
         """管理员删除面试记录（不校验用户归属）"""
-        from sqlalchemy import delete as sql_delete
 
         interview = await db.get(Interview, interview_id)
         if not interview:

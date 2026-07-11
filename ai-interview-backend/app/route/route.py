@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-# 路由导入已移动到路由注册中心统一管理
 
 from app.core.config import settings
 from app.configs.docs_apps import create_client_app, create_backoffice_app
@@ -12,11 +11,7 @@ from app.core.log_config import setup_logging, shutdown_logging, is_master_proce
 from app.services.common.redis import redis_client
 from app.services.common.thread_pool import thread_pool_service
 from app.db.base import close_db_engine
-from app.schedule.schedule import setup_scheduler, shutdown_scheduler
 import logging
-from app.common.log_consumer import consume_logs_forever
-import threading
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -39,27 +34,6 @@ async def lifespan(application: FastAPI):
     # 启动时执行
     setup_logging()
     logger.info("Application starting up")
-
-    # 日志消费线程（仅主进程启动，防止多进程重复）
-    if is_master_process():
-        try:
-            # 创建一个包装函数在线程中运行异步函数
-            def run_log_consumer():
-                asyncio.run(consume_logs_forever())
-                
-            log_thread = threading.Thread(target=run_log_consumer, daemon=True)
-            log_thread.start()
-            logger.info("[LogConsumer] 日志消费线程已启动（主进程）")
-        except Exception as e:
-            logger.warning(f"[LogConsumer] 启动日志消费线程失败: {e}")
-
-    # 单进程运行定时任务是打开下面的代码，多进程运行定时任务是关闭下面的代码使用celery_worker来运行
-    # 初始化定时任务调度器（仅主进程启动）
-    # if is_master_process():
-    #     setup_scheduler(application)
-    #     logger.info("任务调度器已初始化（主进程）")
-    # else:
-    #     logger.debug("当前为工作进程，跳过任务调度器初始化")
 
     yield  # 应用运行期间
 

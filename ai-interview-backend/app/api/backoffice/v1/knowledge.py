@@ -11,6 +11,7 @@ from typing import Optional
 
 from app.db.session import get_db
 from app.api.backoffice.deps import get_current_admin
+from app.deps import get_knowledge_service
 from app.models.admin import Admin
 from app.models.knowledge import KnowledgeDocument, KnowledgeChunk
 from app.schemas.response import ApiResponse
@@ -60,6 +61,7 @@ async def upload_document(
     description: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
     """
     上传文档。流程：
@@ -107,7 +109,7 @@ async def upload_document(
 
     # 3. 后台异步摄入
     background_tasks.add_task(
-        KnowledgeService.ingest_from_path,
+        knowledge_service.ingest_from_path,
         doc.id, file_url, ext,
     )
 
@@ -128,8 +130,9 @@ async def list_documents(
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
-    result = await KnowledgeService.get_document_list(
+    result = await knowledge_service.get_document_list(
         db=db, page=page, size=per_page,
         category=category, status=status, search=search,
     )
@@ -148,9 +151,10 @@ async def test_retrieve_chunks(
     payload: KnowledgeTestRetrieve,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
     """测试文档检索效果"""
-    chunks = await KnowledgeService.retrieve_chunks(
+    chunks = await knowledge_service.retrieve_chunks(
         query=payload.query,
         db=db,
         k=payload.k,
@@ -185,6 +189,7 @@ async def delete_document(
     doc_id: int,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
     doc = await db.get(KnowledgeDocument, doc_id)
     if not doc:
@@ -197,7 +202,7 @@ async def delete_document(
         except OSError as e:
             logger.warning(f"删除文件失败 {doc.file_url}: {e}")
 
-    await KnowledgeService.delete_document(doc_id, db)
+    await knowledge_service.delete_document(doc_id, db)
     return ApiResponse.success(message="文档已删除")
 
 
@@ -229,6 +234,7 @@ async def reindex_document(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
     doc = await db.get(KnowledgeDocument, doc_id)
     if not doc:
@@ -249,7 +255,7 @@ async def reindex_document(
         async with get_session_local()() as session:
             with open(doc.file_url, "rb") as f:
                 file_bytes = f.read()
-            await KnowledgeService.reindex_document(doc_id, file_bytes, doc.file_type, session)
+            await knowledge_service.reindex_document(doc_id, file_bytes, doc.file_type, session)
 
     background_tasks.add_task(_reindex)
 

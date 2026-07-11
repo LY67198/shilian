@@ -21,8 +21,8 @@ from sqlalchemy import select
 from app.db.base import get_session_local
 from app.models.resume import Resume
 from app.models.position_template import PositionTemplate
-from app.services.client.ai_service import AIService
-from app.services.backoffice.position_template_service import PositionTemplateService
+from app.services.client.ai_service import ai_service
+from app.services.backoffice.position_template_service import position_template_service
 
 logger = logging.getLogger(__name__)
 
@@ -110,9 +110,9 @@ async def build_candidate_profile(parsed_resume: dict) -> dict:
             "content": f"候选人简历：\n{json.dumps(parsed_resume, ensure_ascii=False)}",
         },
     ]
-    raw = await AIService._chat(messages, temperature=0.3)
+    raw = await ai_service._chat(messages, temperature=0.3)
     try:
-        return AIService._extract_json(raw)
+        return ai_service._extract_json(raw)
     except Exception as e:
         logger.error(f"build_candidate_profile JSON 解析失败: {e}, raw: {raw[:200]}")
         return {"error": "AI 输出解析失败", "raw": raw[:200]}
@@ -177,7 +177,7 @@ async def match_positions(candidate_profile: dict, top_n: int = 3) -> dict:
         return {"error": "candidate_profile 无效"}
 
     async with get_session_local()() as db:
-        templates = await PositionTemplateService.get_active_list(db)
+        templates = await position_template_service.get_active_list(db)
 
     if not templates:
         return {"recommended_positions": [], "warning": "岗位模板库为空"}
@@ -236,7 +236,7 @@ async def get_position_interview_focus(position_tag: str) -> dict:
         recommended_query_keywords 的字典
     """
     async with get_session_local()() as db:
-        template = await PositionTemplateService.get_by_tag(db, position_tag)
+        template = await position_template_service.get_by_tag(db, position_tag)
 
     if not template:
         return {"error": f"岗位标签 {position_tag} 不存在或已禁用"}
@@ -277,11 +277,11 @@ async def start_mock_interview(
     Returns:
         包含 interview_id, position_tag, first_question, total_questions 的字典
     """
-    from app.services.client.interview_service import InterviewService
+    from app.services.client.interview_service import interview_service
 
     async with get_session_local()() as db:
         # 1. 取岗位模板拿默认参数
-        template = await PositionTemplateService.get_by_tag(db, position_tag)
+        template = await position_template_service.get_by_tag(db, position_tag)
         if not template or not template.is_active:
             return {"error": f"岗位 {position_tag} 不存在或已禁用"}
 
@@ -294,7 +294,7 @@ async def start_mock_interview(
         final_total = total_questions or template.recommended_question_count
 
         try:
-            result = await InterviewService.start_interview(
+            result = await interview_service.start_interview(
                 db=db,
                 user_id=resume.user_id,
                 resume_id=resume_id,

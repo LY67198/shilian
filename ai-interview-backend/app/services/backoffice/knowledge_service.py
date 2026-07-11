@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
-from app.services.common.embedding import embed_text, embed_texts
+from app.llm.embedding import embed_text, embed_texts
 from app.vector_db import get_milvus_client
 from app.vector_db.collections import knowledge as knowledge_vdb
 from app.vector_db.collections.knowledge import KnowledgeChunkPayload
@@ -57,9 +57,10 @@ def _hash_content(text: str) -> str:
 
 
 class KnowledgeService:
+    """知识库服务，提供文档摄入、切分配置、向量化写入（PG + Milvus 双写）和语义检索功能。"""
 
-    @staticmethod
     async def ingest_document(
+        self,
         doc_id: int,
         file_bytes: bytes,
         file_type: str,
@@ -146,18 +147,30 @@ class KnowledgeService:
             logger.error(f"文档 {doc_id} 索引失败: {e}")
             raise
 
-    @staticmethod
-    async def ingest_from_path(doc_id: int, file_path: str, file_type: str) -> int:
-        """从本地磁盘路径摄入（用于 BackgroundTasks，自带独立 DB 会话）"""
+    async def ingest_from_path(self, doc_id: int, file_path: str, file_type: str) -> int:
+        """从本地磁盘路径读取文件并摄入文档（用于 BackgroundTasks，自带独立 DB 会话）。
+
+        Args:
+            doc_id: 文档 ID。
+            file_path: 本地文件路径。
+            file_type: 文件类型（如 pdf、txt、md）。
+
+        Returns:
+            生成的 chunk 数量。
+        """
         from app.db.base import get_session_local
         with open(file_path, "rb") as f:
             file_bytes = f.read()
         async with get_session_local()() as db:
-            return await KnowledgeService.ingest_document(doc_id, file_bytes, file_type, db)
+            return await self.ingest_document(doc_id, file_bytes, file_type, db)
 
-    @staticmethod
-    async def delete_document(doc_id: int, db: AsyncSession) -> None:
-        """删除文档及其所有 chunk（双删：PG + Milvus）"""
+    async def delete_document(self, doc_id: int, db: AsyncSession) -> None:
+        """删除文档及其所有 chunk（双删：先 Milvus 后 PG）。
+
+        Args:
+            doc_id: 文档 ID。
+            db: 数据库会话。
+        """
         # 先 Milvus（如果失败，至少 PG 还能查出来）
         try:
             milvus_client = get_milvus_client()
@@ -171,14 +184,24 @@ class KnowledgeService:
         )
         await db.commit()
 
-    @staticmethod
     async def reindex_document(
+        self,
         doc_id: int,
         file_bytes: bytes,
         file_type: str,
         db: AsyncSession,
     ) -> int:
-        """删除旧 chunk + 重新索引"""
+        """删除旧 chunk 后重新索引文档。
+
+        Args:
+            doc_id: 文档 ID。
+            file_bytes: 文件字节内容。
+            file_type: 文件类型（如 pdf、txt、md）。
+            db: 数据库会话。
+
+        Returns:
+            重新索引后生成的 chunk 数量。
+        """
         milvus_client = get_milvus_client()
         # 双删
         try:
@@ -189,10 +212,10 @@ class KnowledgeService:
             delete(KnowledgeChunk).where(KnowledgeChunk.document_id == doc_id)
         )
         await db.commit()
-        return await KnowledgeService.ingest_document(doc_id, file_bytes, file_type, db)
+        return await self.ingest_document(doc_id, file_bytes, file_type, db)
 
-    @staticmethod
     async def retrieve_chunks(
+        self,
         query: str,
         db: AsyncSession = None,  # noqa 保留参数仅为向后兼容（不再用）
         k: int = 4,
@@ -214,8 +237,8 @@ class KnowledgeService:
             min_score=min_score,
         )
 
-    @staticmethod
     async def get_document_list(
+        self,
         db: AsyncSession,
         page: int = 1,
         size: int = 20,
@@ -223,6 +246,19 @@ class KnowledgeService:
         status: Optional[str] = None,
         search: Optional[str] = None,
     ) -> dict:
+        """分页查询知识库文档列表，支持分类、状态和关键词筛选。
+
+        Args:
+            db: 数据库会话。
+            page: 页码，默认 1。
+            size: 每页条数，默认 20。
+            category: 文档分类筛选。
+            status: 文档状态筛选（如 indexing、indexed、failed）。
+            search: 标题关键词模糊搜索。
+
+        Returns:
+            包含 items、total、page、size 的字典。
+        """
         stmt = select(KnowledgeDocument).where(KnowledgeDocument.id > 0)
         if category:
             stmt = stmt.where(KnowledgeDocument.category == category)
@@ -237,3 +273,6 @@ class KnowledgeService:
         stmt = stmt.order_by(KnowledgeDocument.created_at.desc()).offset((page - 1) * size).limit(size)
         items = (await db.execute(stmt)).scalars().all()
         return {"items": items, "total": total, "page": page, "size": size}
+
+
+knowledge_service = KnowledgeService()

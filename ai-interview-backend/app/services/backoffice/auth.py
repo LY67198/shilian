@@ -4,7 +4,13 @@ from sqlalchemy import select, update
 from datetime import datetime, timedelta, UTC
 from app.models.admin import Admin
 from app.models.token import AdminToken
-from app.core.security import AuthBase
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_token,
+    hash_token,
+    verify_token_hash,
+)
 from app.core.config import settings
 from app.db.session import transaction
 from app.exceptions.http_exceptions import APIException
@@ -42,9 +48,10 @@ async def _bo_clear_login_attempts(email: str) -> None:
         _bo_logger.debug("[bo login ratelimit] 清除计数器失败（忽略）")
 
 
-class BackofficeAuthService(AuthBase):
-    @staticmethod
-    async def authenticate_admin(db: AsyncSession, email: str, password: str) -> Optional[Admin]:
+class BackofficeAuthService:
+    """后台认证服务，提供管理员登录、令牌刷新和登出功能。"""
+
+    async def authenticate_admin(self, db: AsyncSession, email: str, password: str) -> Optional[Admin]:
         """管理员认证"""
         admin_query = select(Admin).where(Admin.email == email)
         result = await db.execute(admin_query)
@@ -54,14 +61,13 @@ class BackofficeAuthService(AuthBase):
             return None
         return admin
 
-    @staticmethod
-    async def login(db: AsyncSession, email: str, password: str) -> Dict:
+    async def login(self, db: AsyncSession, email: str, password: str) -> Dict:
         """管理员登录"""
         # 登录限流：超过阈值直接拒绝，避免暴力破解
         await _bo_check_login_rate_limit(email)
 
         async with transaction(db):
-            admin = await BackofficeAuthService.authenticate_admin(db, email, password)
+            admin = await self.authenticate_admin(db, email, password)
             if not admin:
                 await _bo_increment_login_failures(email)
                 raise APIException(status_code=400, message="Incorrect email or password")
@@ -79,15 +85,15 @@ class BackofficeAuthService(AuthBase):
             await db.execute(stmt)
 
             # 生成新的access token和refresh token
-            access_token = AuthBase.create_access_token(
+            access_token = create_access_token(
                 str(admin.id),
                 scope="backoffice",  # 区分客户端和后台
                 expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             )
-            refresh_token = AuthBase.create_refresh_token(str(admin.id))
+            refresh_token = create_refresh_token(str(admin.id))
 
             # 存储新的refresh token
-            hashed_token = AuthBase.hash_token(refresh_token)
+            hashed_token = hash_token(refresh_token)
             token = AdminToken(
                 admin_id=admin.id,
                 token=hashed_token,
@@ -103,10 +109,9 @@ class BackofficeAuthService(AuthBase):
                 "token_type": "bearer"
             }
 
-    @staticmethod
-    async def refresh_token(db: AsyncSession, refresh_token: str) -> Dict:
+    async def refresh_token(self, db: AsyncSession, refresh_token: str) -> Dict:
         """刷新管理员token"""
-        payload = AuthBase.verify_token(refresh_token, scope="refresh")
+        payload = verify_token(refresh_token, scope="refresh")
         if not payload:
             raise APIException(status_code=401, message="Invalid refresh token")
 
@@ -118,23 +123,22 @@ class BackofficeAuthService(AuthBase):
         result = await db.execute(token_query)
         token = result.scalar_one_or_none()
 
-        if not token or not AuthBase.verify_token_hash(refresh_token, token.token):
+        if not token or not verify_token_hash(refresh_token, token.token):
             raise APIException(status_code=401, message="Invalid or expired refresh token")
 
         token.last_used_at = datetime.now(UTC)
         await db.commit()
 
-        access_token = AuthBase.create_access_token(
+        access_token = create_access_token(
             admin_id,
             scope="backoffice",
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         return {"access_token": access_token, "token_type": "bearer"}
 
-    @staticmethod
-    async def logout(db: AsyncSession, refresh_token: str) -> None:
+    async def logout(self, db: AsyncSession, refresh_token: str) -> None:
         """管理员登出"""
-        payload = AuthBase.verify_token(refresh_token, scope="backoffice")
+        payload = verify_token(refresh_token, scope="backoffice")
         if not payload:
             return  # 忽略无效token
 

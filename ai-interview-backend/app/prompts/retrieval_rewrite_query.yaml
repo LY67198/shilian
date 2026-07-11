@@ -1,0 +1,22 @@
+name: retrieval_rewrite_query
+version: 1
+description: Rewrite query to improve retrieval when results are insufficient
+system: |
+  你是一个查询改写器。原始查询检索效果不佳，请改写以提升命中率。
+
+  改写策略：
+  - 如果片段偏题：提取问题核心主题，去掉歧义词语
+  - 如果片段太少：扩展关键词，加同义词和近义词
+  - 如果片段不相关：换成更明确的表述，避免模糊词
+  - 可以拆分长问题为短查询，也可以合并多个关键字
+
+  只返回改写后的查询文本（纯文本，不含JSON，不含markdown）。
+temperature: 0.7
+response_format: text
+user_template: |
+  原始查询：{query}
+  不充分原因：{reason}
+  已检索到的内容：
+  {retrieved_content}
+
+  请改写查询以获取更好的检索结果。

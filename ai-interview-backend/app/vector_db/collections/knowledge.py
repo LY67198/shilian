@@ -52,7 +52,7 @@ class KnowledgeChunkPayload(BaseModel):
     chunk_index: int
     content: str
     content_hash: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     embedding: List[float]
 
 
@@ -145,7 +145,15 @@ def search(
 
 
 def delete_by_document(client: MilvusClient, document_id: int) -> int:
-    """按 document_id 删除所有 chunks，返回删除条数"""
+    """按 document_id 删除该文档下的所有 chunks。
+
+    Args:
+        client: Milvus 客户端实例。
+        document_id: 目标文档的 PostgreSQL ID。
+
+    Returns:
+        实际删除的 chunk 条数。
+    """
     result = client.delete(
         collection_name=COLLECTION_NAME,
         filter=f"document_id == {document_id}",
@@ -156,7 +164,17 @@ def delete_by_document(client: MilvusClient, document_id: int) -> int:
 
 
 def get_by_ids(client: MilvusClient, ids: List[int]) -> List[Dict[str, Any]]:
-    """按主键批量取（用于父子块组装 / 引用回溯）"""
+    """按主键批量获取 chunks。
+
+    常用于父子块组装或检索结果的引用回溯。
+
+    Args:
+        client: Milvus 客户端实例。
+        ids: 待查询的 chunk ID 列表。
+
+    Returns:
+        chunks 数据列表，每项包含 document_id、chunk_index、content、content_hash、metadata 等字段。
+    """
     if not ids:
         return []
     ids_str = ", ".join(str(i) for i in ids)

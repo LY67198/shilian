@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
-from app.core.security import AuthBase
+from app.core.security import verify_token
 from app.models.admin import Admin
 from app.core.config import settings
 
@@ -14,7 +14,7 @@ async def get_current_admin(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> Admin:
-    payload = AuthBase.verify_token(token, scope="backoffice")
+    payload = verify_token(token, scope="backoffice")
     if not payload:
         raise HTTPException(
             status_code=403,

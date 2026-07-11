@@ -12,8 +12,9 @@ from app.services.common.email_smtp import (
 
 
 class ClientEmailService:
-    @staticmethod
-    async def send_registration_verification(email: str, verification_code: str, user_name: str = None):
+    """客户端邮件服务，封装注册验证、密码重置、欢迎邮件和等待列表通知的发送逻辑。"""
+
+    async def send_registration_verification(self, email: str, verification_code: str, user_name: str = None):
         """
         Send registration verification code email
 
@@ -29,8 +30,7 @@ class ClientEmailService:
             expires_minutes=10
         )
 
-    @staticmethod
-    async def send_password_reset_code(email: str, verification_code: str, user_name: str = None):
+    async def send_password_reset_code(self, email: str, verification_code: str, user_name: str = None):
         """
         Send password reset verification code email
 
@@ -46,8 +46,7 @@ class ClientEmailService:
             expires_minutes=10
         )
 
-    @staticmethod
-    async def send_welcome(email: str, user_name: str = None, dashboard_url: str = "https://prepwise.com/dashboard"):
+    async def send_welcome(self, email: str, user_name: str = None, dashboard_url: str = "https://prepwise.com/dashboard"):
         """
         Send welcome email
 
@@ -62,8 +61,7 @@ class ClientEmailService:
             dashboard_url=dashboard_url
         )
 
-    @staticmethod
-    async def send_waiting_list_verification(email: str, verification_token: str, first_name: str = None):
+    async def send_waiting_list_verification(self, email: str, verification_token: str, first_name: str = None):
         """
         Send waiting list verification email
 
@@ -78,8 +76,7 @@ class ClientEmailService:
             first_name=first_name or "User"
         )
 
-    @staticmethod
-    async def send_waiting_list_admin_notification(submission_data: dict):
+    async def send_waiting_list_admin_notification(self, submission_data: dict):
         """
         Send waiting list submission notification to admin
 

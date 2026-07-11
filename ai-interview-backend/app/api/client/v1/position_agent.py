@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.api.client.deps import get_current_user
+from app.deps import get_position_agent_service
 from app.models.user import User
 from app.models.resume import Resume
 from app.schemas.response import ApiResponse
@@ -27,6 +28,7 @@ async def match_positions_for_resume(
     payload: PositionMatchRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    position_agent_service: PositionAgentService = Depends(get_position_agent_service),
 ):
     """
     运行岗位匹配 Agent，基于简历输出结构化的岗位推荐结果。
@@ -53,7 +55,7 @@ async def match_positions_for_resume(
 
     logger.info(f"用户 {current_user.id} 触发 Agent 匹配，resume_id={payload.resume_id}")
 
-    response = await PositionAgentService.run_agent(
+    response = await position_agent_service.run_agent(
         resume_id=payload.resume_id,
         target_direction=payload.target_direction,
     )

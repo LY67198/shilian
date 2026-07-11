@@ -37,17 +37,20 @@ class TestExtractJson:
         result = AIService._extract_json(text)
         assert result == {"score": 9.0, "follow_up": False}
 
-    def test_empty_text_raises(self):
-        with pytest.raises(ValueError, match="为空"):
-            AIService._extract_json("")
+    def test_empty_text_fallback(self):
+        result = AIService._extract_json("")
+        assert result["score"] == 5.0
+        assert result["parse_failed"] is True
 
-    def test_whitespace_text_raises(self):
-        with pytest.raises(ValueError, match="为空"):
-            AIService._extract_json("   \n  \t  ")
+    def test_whitespace_text_fallback(self):
+        result = AIService._extract_json("   \n  \t  ")
+        assert result["score"] == 5.0
+        assert result["parse_failed"] is True
 
-    def test_no_json_in_text_raises(self):
-        with pytest.raises(ValueError):
-            AIService._extract_json("这是普通文字，没有任何 JSON")
+    def test_no_json_in_text_fallback(self):
+        result = AIService._extract_json("这是普通文字，没有任何 JSON")
+        assert result["score"] == 5.0
+        assert result["parse_failed"] is True
 
     def test_pass_through_dict(self):
         """已是 dict/list 的直接透传"""

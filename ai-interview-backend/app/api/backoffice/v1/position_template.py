@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.db.session import get_db
 from app.api.backoffice.deps import get_current_admin
+from app.deps import get_position_template_service
 from app.models.admin import Admin
 from app.schemas.response import ApiResponse
 from app.schemas.backoffice.position_template import (
@@ -53,9 +54,10 @@ async def list_templates(
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """岗位模板列表"""
-    result = await PositionTemplateService.get_list(
+    result = await position_template_service.get_list(
         db=db, page=page, size=per_page,
         category=category, is_active=is_active, search=search,
     )
@@ -72,10 +74,11 @@ async def create_template(
     payload: PositionTemplateCreate,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """新增岗位模板"""
     try:
-        t = await PositionTemplateService.create(db, payload.model_dump())
+        t = await position_template_service.create(db, payload.model_dump())
     except ValueError as e:
         return ApiResponse.failed(str(e), body_code=400)
     return ApiResponse.success(_to_response(t), message="创建成功")
@@ -86,9 +89,10 @@ async def get_template(
     template_id: int,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """岗位模板详情"""
-    t = await PositionTemplateService.get_by_id(db, template_id)
+    t = await position_template_service.get_by_id(db, template_id)
     if not t:
         return ApiResponse.failed("岗位模板不存在", body_code=404, http_code=404)
     return ApiResponse.success(_to_response(t))
@@ -100,12 +104,13 @@ async def update_template(
     payload: PositionTemplateUpdate,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """更新岗位模板"""
     data = payload.model_dump(exclude_unset=True)
     if not data:
         return ApiResponse.failed("没有任何更新字段", body_code=400)
-    t = await PositionTemplateService.update(db, template_id, data)
+    t = await position_template_service.update(db, template_id, data)
     if not t:
         return ApiResponse.failed("岗位模板不存在", body_code=404, http_code=404)
     return ApiResponse.success(_to_response(t), message="更新成功")
@@ -116,9 +121,10 @@ async def delete_template(
     template_id: int,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """删除岗位模板"""
-    ok = await PositionTemplateService.delete(db, template_id)
+    ok = await position_template_service.delete(db, template_id)
     if not ok:
         return ApiResponse.failed("岗位模板不存在", body_code=404, http_code=404)
     return ApiResponse.success(message="删除成功")
@@ -130,9 +136,10 @@ async def toggle_template(
     payload: PositionTemplateToggle,
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin),
+    position_template_service: PositionTemplateService = Depends(get_position_template_service),
 ):
     """启用/禁用岗位模板"""
-    ok = await PositionTemplateService.toggle(db, template_id, payload.is_active)
+    ok = await position_template_service.toggle(db, template_id, payload.is_active)
     if not ok:
         return ApiResponse.failed("岗位模板不存在", body_code=404, http_code=404)
     return ApiResponse.success(message="状态已更新")

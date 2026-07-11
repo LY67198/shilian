@@ -4,7 +4,13 @@ from sqlalchemy import select, update
 from datetime import datetime, timedelta, UTC
 from app.models.user import User
 from app.models.token import Token
-from app.core.security import AuthBase
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_token,
+    hash_token,
+    verify_token_hash,
+)
 from app.core.config import settings
 from app.db.session import transaction
 from app.exceptions.http_exceptions import APIException
@@ -46,9 +52,10 @@ async def _clear_login_attempts(email: str) -> None:
         _login_logger.debug(f"[login ratelimit] 清除计数器失败（忽略）")
 
 
-class ClientAuthService(AuthBase):
-    @staticmethod
-    def validate_password(password: str) -> bool:
+class ClientAuthService:
+    """客户端认证服务，提供用户注册、登录、令牌刷新和密码重置等认证相关业务逻辑。"""
+
+    def validate_password(self, password: str) -> bool:
         """验证密码强度"""
         if len(password) < 8:
             raise APIException(status_code=400, message="密码至少8个字符")
@@ -64,8 +71,7 @@ class ClientAuthService(AuthBase):
 
         return True
 
-    @staticmethod
-    async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
+    async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> Optional[User]:
         """用户身份验证"""
         user_query = select(User).where(User.email == email)
         result = await db.execute(user_query)
@@ -75,8 +81,7 @@ class ClientAuthService(AuthBase):
             return None
         return user
 
-    @staticmethod
-    async def register_user(db: AsyncSession, user_data: Dict) -> Dict:
+    async def register_user(self, db: AsyncSession, user_data: Dict) -> Dict:
         """用户注册（信息采集）"""
         async with transaction(db):
             # 检查邮箱是否已存在
@@ -87,7 +92,7 @@ class ClientAuthService(AuthBase):
                 raise APIException(status_code=400, message="该邮箱已被注册")
 
             # 验证密码强度
-            ClientAuthService.validate_password(user_data["password"])
+            self.validate_password(user_data["password"])
 
             # 创建用户（未验证状态）
             user = User(
@@ -129,8 +134,7 @@ class ClientAuthService(AuthBase):
                 "verification_required": True
             }
 
-    @staticmethod
-    async def send_verification_code(db: AsyncSession, email: str, code_type: str) -> Dict:
+    async def send_verification_code(self, db: AsyncSession, email: str, code_type: str) -> Dict:
         """发送验证码"""
         # 检查用户是否存在
         user_query = select(User).where(User.email == email)
@@ -165,8 +169,7 @@ class ClientAuthService(AuthBase):
             "can_resend_at": 60  # 1分钟后可重新发送
         }
 
-    @staticmethod
-    async def verify_email_and_login(db: AsyncSession, email: str, code: str) -> Dict:
+    async def verify_email_and_login(self, db: AsyncSession, email: str, code: str) -> Dict:
         """验证邮箱并自动登录"""
         # 验证验证码
         await redis_verification_service.verify_code(email, code, "registration")
@@ -192,15 +195,15 @@ class ClientAuthService(AuthBase):
             )
 
             # 生成令牌并登录
-            access_token = AuthBase.create_access_token(
+            access_token = create_access_token(
                 str(user.id),
                 scope="client",
                 expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             )
-            refresh_token = AuthBase.create_refresh_token(str(user.id))
+            refresh_token = create_refresh_token(str(user.id))
 
             # 存储 refresh token
-            hashed_token = AuthBase.hash_token(refresh_token)
+            hashed_token = hash_token(refresh_token)
             token = Token(
                 user_id=user.id,
                 token=hashed_token,
@@ -225,14 +228,13 @@ class ClientAuthService(AuthBase):
                 }
             }
 
-    @staticmethod
-    async def login(db: AsyncSession, email: str, password: str, remember_me: bool = False) -> Dict:
+    async def login(self, db: AsyncSession, email: str, password: str, remember_me: bool = False) -> Dict:
         """用户登录"""
         # 登录限流：超过阈值直接拒绝，避免暴力破解
         await _check_login_rate_limit(email)
 
         async with transaction(db):
-            user = await ClientAuthService.authenticate_user(db, email, password)
+            user = await self.authenticate_user(db, email, password)
             if not user:
                 # 失败时增加计数，便于限流判断
                 await _increment_login_failures(email)
@@ -253,7 +255,7 @@ class ClientAuthService(AuthBase):
             )
 
             # 生成新的 access token 和 refresh token
-            access_token = AuthBase.create_access_token(
+            access_token = create_access_token(
                 str(user.id),
                 scope="client",
                 expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -261,13 +263,13 @@ class ClientAuthService(AuthBase):
 
             # 根据 remember_me 设置 refresh token 过期时间
             refresh_expires = timedelta(days=30 if remember_me else 7)
-            refresh_token = AuthBase.create_refresh_token(
+            refresh_token = create_refresh_token(
                 str(user.id),
                 expires_delta=refresh_expires
             )
 
             # 存储新的refresh token
-            hashed_token = AuthBase.hash_token(refresh_token)
+            hashed_token = hash_token(refresh_token)
             token = Token(
                 user_id=user.id,
                 token=hashed_token,
@@ -295,10 +297,9 @@ class ClientAuthService(AuthBase):
                 }
             }
 
-    @staticmethod
-    async def refresh_token(db: AsyncSession, refresh_token: str) -> Dict:
+    async def refresh_token(self, db: AsyncSession, refresh_token: str) -> Dict:
         """刷新用户令牌"""
-        payload = AuthBase.verify_token(refresh_token, scope="refresh")
+        payload = verify_token(refresh_token, scope="refresh")
         if not payload:
             raise APIException(status_code=401, message="无效的刷新令牌")
 
@@ -310,7 +311,7 @@ class ClientAuthService(AuthBase):
         result = await db.execute(token_query)
         token = result.scalar_one_or_none()
 
-        if not token or not AuthBase.verify_token_hash(refresh_token, token.token):
+        if not token or not verify_token_hash(refresh_token, token.token):
             raise APIException(status_code=401, message="无效或已过期的刷新令牌")
 
         # 检查用户状态
@@ -325,7 +326,7 @@ class ClientAuthService(AuthBase):
         await db.commit()
 
         # 生成新的 access token
-        access_token = AuthBase.create_access_token(
+        access_token = create_access_token(
             user_id,
             scope="client",
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -336,10 +337,9 @@ class ClientAuthService(AuthBase):
             "token_type": "bearer"
         }
 
-    @staticmethod
-    async def logout(db: AsyncSession, refresh_token: str) -> None:
+    async def logout(self, db: AsyncSession, refresh_token: str) -> None:
         """用户登出"""
-        payload = AuthBase.verify_token(refresh_token, scope="refresh")
+        payload = verify_token(refresh_token, scope="refresh")
         if not payload:
             return  # 忽略无效令牌
 
@@ -351,12 +351,11 @@ class ClientAuthService(AuthBase):
         result = await db.execute(token_query)
         token = result.scalar_one_or_none()
 
-        if token and AuthBase.verify_token_hash(refresh_token, token.token):
+        if token and verify_token_hash(refresh_token, token.token):
             token.is_active = False
             await db.commit()
 
-    @staticmethod
-    async def verify_password_reset_code(db: AsyncSession, email: str, code: str) -> str:
+    async def verify_password_reset_code(self, db: AsyncSession, email: str, code: str) -> str:
         """验证密码重置验证码"""
         # 验证验证码
         await redis_verification_service.verify_code(email, code, "password-reset")
@@ -369,7 +368,7 @@ class ClientAuthService(AuthBase):
             raise APIException(status_code=404, message="用户不存在")
 
         # 生成密码重置令牌（短期有效）
-        reset_token = AuthBase.create_access_token(
+        reset_token = create_access_token(
             str(user.id),
             scope="password-reset",
             expires_delta=timedelta(minutes=15)  # 15分钟有效
@@ -377,15 +376,14 @@ class ClientAuthService(AuthBase):
 
         return reset_token
 
-    @staticmethod
-    async def reset_password(db: AsyncSession, reset_token: str, new_password: str) -> None:
+    async def reset_password(self, db: AsyncSession, reset_token: str, new_password: str) -> None:
         """重置密码"""
-        payload = AuthBase.verify_token(reset_token, scope="password-reset")
+        payload = verify_token(reset_token, scope="password-reset")
         if not payload:
             raise APIException(status_code=401, message="无效的重置令牌")
 
         # 验证新密码强度
-        ClientAuthService.validate_password(new_password)
+        self.validate_password(new_password)
 
         user_id = payload.get("sub")
         async with transaction(db):

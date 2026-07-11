@@ -6,7 +6,7 @@ import logging
 import httpx
 
 from app.core.celery_app import celery_app
-from app.services.backoffice.question_bank_service import QuestionBankService
+from app.services.backoffice.question_bank_service import question_bank_service
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ def ingest_document_task(self, doc_id: int, file_url: str, file_type: str):
     """
     async def _run():
         from app.db.base import get_session_local
-        from app.services.backoffice.knowledge_service import KnowledgeService
+        from app.services.backoffice.knowledge_service import knowledge_service
 
         # 下载文件
         async with httpx.AsyncClient(timeout=60) as client:
@@ -27,7 +27,7 @@ def ingest_document_task(self, doc_id: int, file_url: str, file_type: str):
             file_bytes = resp.content
 
         async with get_session_local()() as db:
-            await KnowledgeService.ingest_document(doc_id, file_bytes, file_type, db)
+            await knowledge_service.ingest_document(doc_id, file_bytes, file_type, db)
 
     try:
         asyncio.run(_run())
@@ -45,7 +45,7 @@ def batch_embed_questions_task(self, question_ids: list[int]):
     批量题目向量化任务（批量导入时触发）
     """
     try:
-        result = QuestionBankService.batch_embed_sync(question_ids)
+        result = question_bank_service.batch_embed_sync(question_ids)
         return {"status": "success", **result}
     except Exception as exc:
         logger.error(f"批量向量化任务失败: {exc}")
@@ -57,6 +57,6 @@ def batch_embed_questions_task(self, question_ids: list[int]):
 @celery_app.task(time_limit=3600)
 def reindex_all_questions_task():
     """全量重建题库 embedding（升级 Embedding 模型时使用）"""
-    result = QuestionBankService.reindex_all_sync()
+    result = question_bank_service.reindex_all_sync()
     logger.info(f"全量重建完成: {result}")
     return result

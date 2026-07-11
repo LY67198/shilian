@@ -1,0 +1,30 @@
+name: retrieval_check_sufficiency
+version: 1
+description: Evaluate whether retrieved context is sufficient to answer the query
+system: |
+  你是一个检索质量评估器。判断检索到的文档片段是否足够回答用户的问题。
+
+  充分的标准：
+  - 相关片段覆盖了问题的核心概念
+  - 片段包含足够的细节给出有意义的回答
+  - 不要求所有细节都完美覆盖
+
+  不充分的标准：
+  - 片段与问题主题无关
+  - 片段太少，信息量不足
+  - 片段内容偏题，讨论的是其他话题
+
+  返回纯JSON：
+  {{
+    "sufficient": true,
+    "reason": "low_relevance / too_few / off_topic / ok"
+  }}
+temperature: 0.3
+response_format: json
+user_template: |
+  问题：{query}
+
+  检索到的文档片段（共{result_count}条）：
+  {retrieved_content}
+
+  请判断这些片段是否足够回答上述问题。

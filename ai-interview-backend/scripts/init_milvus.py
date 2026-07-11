@@ -17,7 +17,7 @@ import logging
 import sys
 
 from app.core.config import settings
-from app.vector_db.client import milvus_client
+from app.vector_db.client import get_milvus_client, health_check_milvus
 from app.vector_db.collections import knowledge, question_bank
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -29,11 +29,11 @@ def main() -> int:
     logger.info(f"Target: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}/{settings.MILVUS_DB_NAME}")
 
     # 健康检查
-    if not milvus_client.health_check():
+    if not health_check_milvus():
         logger.error(f"无法连接 Milvus: {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
         return 1
 
-    client = milvus_client.get_client()
+    client = get_milvus_client()
     dim = settings.KNOWLEDGE_EMBEDDING_DIM
     logger.info(f"Embedding dim = {dim}")
 

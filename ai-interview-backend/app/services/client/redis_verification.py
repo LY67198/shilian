@@ -14,19 +14,20 @@ MAX_VERIFICATION_ATTEMPTS = 5  # 最大验证尝试次数
 
 
 class RedisVerificationService:
-    @staticmethod
-    def generate_6_digit_code() -> str:
+    """Redis 验证码服务，提供验证码生成、存储、校验和发送频率限制功能。"""
+
+    def generate_6_digit_code(self) -> str:
         """生成6位数字验证码"""
         return f"{random.randint(100000, 999999)}"
 
-    @staticmethod
     async def generate_and_store_code(
+        self,
         email: str,
         code_type: str,
         user_id: Optional[int] = None
     ) -> str:
         """生成验证码并存储到 Redis"""
-        code = RedisVerificationService.generate_6_digit_code()
+        code = self.generate_6_digit_code()
         key = f"verification_code:{code_type}:{email}"
 
         data = {
@@ -39,8 +40,7 @@ class RedisVerificationService:
         await redis_client.set_with_ttl(key, json.dumps(data), VERIFICATION_CODE_EXPIRE)
         return code
 
-    @staticmethod
-    async def verify_code(email: str, code: str, code_type: str) -> Dict:
+    async def verify_code(self, email: str, code: str, code_type: str) -> Dict:
         """验证验证码"""
         key = f"verification_code:{code_type}:{email}"
         data_str = await redis_client.get(key)
@@ -65,8 +65,7 @@ class RedisVerificationService:
         await redis_client.delete(key)
         return data
 
-    @staticmethod
-    async def check_send_rate_limit(email: str) -> bool:
+    async def check_send_rate_limit(self, email: str) -> bool:
         """检查发送频率限制"""
         key = f"verification_rate_limit:{email}"
 
@@ -79,8 +78,7 @@ class RedisVerificationService:
         await redis_client.set_cooldown(key, SEND_CODE_RATE_LIMIT)
         return True
 
-    @staticmethod
-    async def get_remaining_cooldown(email: str) -> int:
+    async def get_remaining_cooldown(self, email: str) -> int:
         """获取剩余冷却时间（秒）"""
         key = f"verification_rate_limit:{email}"
         ttl = await redis_client.redis.ttl(key)
