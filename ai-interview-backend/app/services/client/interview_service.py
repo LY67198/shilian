@@ -39,47 +39,104 @@ class InterviewService:
         total_questions: int,
     ) -> list:
         """
-        RAG 出题核心：
-        1. 用岗位 + 简历技能构造 query，向题库做向量检索
-        2. 根据召回数量分支：
-           - 充分（>= total）→ AI 选题 + 微调（select_and_adapt_questions）
-           - 不足（0 < cnt < total）→ AI 兜底补全（generate_with_seeds）
-           - 为空（=0）→ 完全 AI 生成（fallback to legacy generate_questions）
+        Phase 3 RAG 出题：使用 RetrievalPipeline（vector + BM25 + RRF + rerank）。
+
+        优先级：hybrid recall → AI select → AI seed → pure AI generate
         """
+        from app.retrieval.bm25_lifecycle import get_question_bank_bm25
+        from app.retrieval.pipeline import RetrievalPipeline
+        from app.vector_db import get_milvus_client
+
         query = _build_retrieval_query(target_position, parsed_resume)
         recall_k = total_questions * settings.QUESTION_BANK_RECALL_FACTOR
 
-        # 题库 RAG 检索包裹 try/except：DashScope embedding 服务或 pgvector 出错时
-        # 降级到纯 AI 生成，避免面试启动直接崩
         try:
-            candidates = await QuestionBankService.retrieve_questions(
-                query=query,
-                db=db,
-                k=recall_k,
-                position_tag=target_position,
-                difficulty=difficulty,
-                min_score=settings.QUESTION_BANK_MIN_SCORE,
-            )
-            # 召回失败时兜底：放宽 position_tag 限制再试一次（命中率更高）
-            if len(candidates) < total_questions:
-                relaxed = await QuestionBankService.retrieve_questions(
+            bm25_index = get_question_bank_bm25()
+            milvus_client = get_milvus_client()
+
+            if bm25_index and milvus_client:
+                pipeline = RetrievalPipeline(
+                    client=milvus_client,
+                    collection="question_bank",
+                    bm25_index=bm25_index,
+                    vector_top_k=settings.VECTOR_TOP_K,
+                    bm25_top_k=settings.BM25_TOP_K,
+                    final_top_k=recall_k,
+                    enable_rerank=True,
+                )
+                results = await pipeline.search(
+                    query=query,
+                    filters={
+                        "position_tag": target_position,
+                        "difficulty": difficulty,
+                        "min_score": settings.QUESTION_BANK_MIN_SCORE,
+                    },
+                )
+                # Convert SearchResult to the dict format expected by AI service
+                candidates = []
+                for r in results:
+                    candidates.append({
+                        "id": r.id,
+                        "question": r.metadata.get("question", r.content),
+                        "reference_answer": r.metadata.get("reference_answer", ""),
+                        "key_points": r.metadata.get("key_points", []),
+                        "difficulty": r.metadata.get("difficulty", difficulty),
+                        "position_tag": r.metadata.get("position_tag", target_position),
+                        "similarity": r.score,
+                        "source": "from_bank",
+                    })
+
+                # Fallback: relax position_tag if insufficient
+                if len(candidates) < total_questions:
+                    relaxed_results = await pipeline.search(
+                        query=query,
+                        filters={
+                            "difficulty": difficulty,
+                            "min_score": settings.QUESTION_BANK_MIN_SCORE,
+                        },
+                    )
+                    seen = {c["id"] for c in candidates}
+                    for r in relaxed_results:
+                        if r.id not in seen:
+                            candidates.append({
+                                "id": r.id,
+                                "question": r.metadata.get("question", r.content),
+                                "reference_answer": r.metadata.get("reference_answer", ""),
+                                "key_points": r.metadata.get("key_points", []),
+                                "difficulty": r.metadata.get("difficulty", difficulty),
+                                "position_tag": r.metadata.get("position_tag", target_position),
+                                "similarity": r.score,
+                                "source": "from_bank",
+                            })
+            else:
+                # Fallback: BM25 not available, use old vector-only path
+                candidates = await QuestionBankService.retrieve_questions(
                     query=query,
                     db=db,
                     k=recall_k,
-                    position_tag=None,
+                    position_tag=target_position,
                     difficulty=difficulty,
                     min_score=settings.QUESTION_BANK_MIN_SCORE,
                 )
-                seen = {c["id"] for c in candidates}
-                for c in relaxed:
-                    if c["id"] not in seen:
-                        candidates.append(c)
+                if len(candidates) < total_questions:
+                    relaxed = await QuestionBankService.retrieve_questions(
+                        query=query,
+                        db=db,
+                        k=recall_k,
+                        position_tag=None,
+                        difficulty=difficulty,
+                        min_score=settings.QUESTION_BANK_MIN_SCORE,
+                    )
+                    seen = {c["id"] for c in candidates}
+                    for c in relaxed:
+                        if c["id"] not in seen:
+                            candidates.append(c)
         except Exception as e:
-            logger.error(f"[RAG出题] 题库检索异常，降级到纯 AI 生成: {e}")
+            logger.error(f"[RAG出题] Hybrid retrieval failed, falling back to pure AI: {e}")
             candidates = []
 
         cnt = len(candidates)
-        logger.info(f"[RAG出题] 题库召回 {cnt} 题，目标 {total_questions} 题")
+        logger.info(f"[RAG出题] Hybrid recall: {cnt} questions, target: {total_questions}")
 
         if cnt >= total_questions:
             logger.info(f"[RAG出题] 走【题库充分】分支")
@@ -107,7 +164,6 @@ class InterviewService:
                 difficulty=difficulty,
                 count=total_questions,
             )
-            # 给所有题打上 source 标记
             for q in questions:
                 q.setdefault("source", "ai_fallback")
                 q.setdefault("bank_id", None)
