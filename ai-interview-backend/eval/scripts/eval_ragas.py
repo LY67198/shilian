@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import argparse
 from datetime import datetime
 from pathlib import Path
 
@@ -44,8 +45,9 @@ def load_golden_set(path: Path) -> dict:
         return json.load(f)
 
 
-async def run_evaluation():
-    golden = load_golden_set(GOLDEN_SET_PATH)
+async def run_evaluation(args):
+    golden_path = Path(args.golden_set) if args.golden_set else GOLDEN_SET_PATH
+    golden = load_golden_set(golden_path)
     entries = golden.get("entries", [])
     logger.info(f"Loaded {len(entries)} golden entries")
 
@@ -130,14 +132,62 @@ async def run_evaluation():
     # Save report
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
-    report_path = REPORTS_DIR / f"baseline-{date_str}.json"
+    report_path = Path(args.output) if args.output else REPORTS_DIR / f"baseline-{date_str}.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     logger.info(f"Report saved to {report_path}")
     logger.info(f"Metrics: {json.dumps(report['metrics'], indent=2)}")
 
+    if args.upload:
+        _upload_to_langsmith(report, golden, args.experiment_name)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="RAGAS evaluation script")
+    parser.add_argument("--golden-set", default=None, help="Path to golden set JSON (default: eval/golden_set.json)")
+    parser.add_argument("--output", default=None, help="Output report path (default: eval/reports/baseline-{date}.json)")
+    parser.add_argument("--upload", action="store_true", help="Upload results to LangSmith experiment")
+    parser.add_argument("--experiment-name", default=None, help="LangSmith experiment name (default: ragas-{date})")
+    return parser.parse_args()
+
+
+def _upload_to_langsmith(report, golden_data, experiment_name):
+    """Upload RAGAS results as LangSmith experiment"""
+    import os
+    from datetime import date
+
+    api_key = os.environ.get("LANGSMITH_API_KEY")
+    if not api_key:
+        print("LANGSMITH_API_KEY not set. Skipping LangSmith upload.")
+        return
+
+    from langsmith import Client
+
+    ls_client = Client()
+    if experiment_name is None:
+        experiment_name = f"ragas-{date.today().isoformat()}"
+
+    dataset_name = "shilian-golden-set"
+
+    # Find dataset
+    try:
+        dataset = ls_client.read_dataset(dataset_name=dataset_name)
+    except Exception:
+        print(f"LangSmith dataset '{dataset_name}' not found. Run upload_golden_set.py first.")
+        return
+
+    # Upload aggregated metrics as experiment results
+    ls_client.create_experiment(
+        name=experiment_name,
+        dataset_id=dataset.id,
+        metadata=report.get("metrics", {}),
+    )
+
+    print(f"Uploaded RAGAS results to LangSmith experiment: {experiment_name}")
+
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(run_evaluation())
+    args = parse_args()
+    asyncio.run(run_evaluation(args))
