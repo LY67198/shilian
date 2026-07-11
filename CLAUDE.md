@@ -49,7 +49,7 @@ ai-interview-agent/
 │   │   │   │   ├── nodes/         # fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report
 │   │   │   │   ├── state.py       # InterviewState + ScoreResult
 │   │   │   │   ├── graph.py       # build_interview_graph() + get_compiled_graph()
-│   │   │   │   └── service.py     # InterviewGraphService.submit_answer() 单一入口
+│   │   │   │   └── service.py     # submit_answer() 单一入口（模块级函数）
 │   │   ├── vector_db/             # 🆕 Milvus 客户端 + collections schema + CRUD
 │   │   │   ├── client.py          # MilvusClient 单例 + health_check
 │   │   │   ├── index.py           # HNSW + L2 索引配置
@@ -240,7 +240,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
   - `prompts.py` — YAML PromptTemplate 加载器
 - `app/prompts/*.yaml` — 8 个 prompt 外置（position_agent_system / resume_parse / resume_analyze / question_generate / question_select / question_seed / evaluate_answer / generate_report）
 - `app/repositories/` — Repository Pattern 骨架
-  - `base.py` — `BaseRepository[T]` 泛型基类
+  - `base.py` — `BaseRepository[T]` 泛型基类（仅提供 `get_by_id`，其余 CRUD 方法已移除）
   - `interview_repo.py` — 首个 repo（list_by_user / list_messages / get_active_question）
 - `app/workflows/_shared/` — LangGraph 编排共享设施
   - `llm.py` / `checkpointer.py`（AsyncPostgresSaver 单例）/ `state_base.py` / `tracing.py` / `format_exception.py` / `tools.py`
@@ -264,7 +264,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 **核心重构**：
 - `_extract_json` — 解析失败不抛 ValueError，返回 `{"score": 5.0, "parse_failed": True}` 兜底
 - `app/workflows/_shared/sse.py` — `astream_to_sse()` 封装，映射 LangGraph `astream_events` → SSE 标准事件
-- `app/workflows/interview/` — 6 个 nodes（fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report）+ StateGraph HITL 模式（`interrupt_after=["ask_question"]`）+ `InterviewGraphService.submit_answer(stream=True/False)` 单一入口
+- `app/workflows/interview/` — 6 个 nodes（fetch_context / retrieve_knowledge / evaluate / check_finished / ask_question / generate_report）+ StateGraph HITL 模式（`interrupt_after=["ask_question"]`）+ `submit_answer(stream=True/False)` 单一入口
 - `app/api/client/v1/interview.py` — `/answer` 和 `/answer/stream` 端点全部走 graph service
 - `ai_service.py` — 5 个出题方法（parse_resume / analyze_resume / generate_questions / select_and_adapt / generate_with_seeds）切 YAML `load_prompt()`；删除 evaluate_answer / evaluate_answer_stream / generate_report（已迁到 graph nodes）
 - `interview_service.py` — 删除 submit_answer / submit_answer_stream（~320 行），保留 start / get_report / get_messages / get_interviews / delete
@@ -280,7 +280,7 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - `app/agents/` — BaseAgent + QuestionAgent + EvaluatorAgent + ReportAgent
 - 3 个新 YAML prompt：question_agent / evaluator_agent / report_agent
 - evaluate_node / generate_report_node 委托 Agent 类，不再直接调 LLM
-- InterviewGraphService 通过 state.custom 注入 agent 实例
+- submit_answer() 通过 state.custom 注入 agent 实例
 
 **Repository 补全**：
 - `question_bank_repo.py` — search_by_position / list_by_position / increment_use_count
