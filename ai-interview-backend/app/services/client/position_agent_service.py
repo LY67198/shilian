@@ -16,6 +16,7 @@ from langchain_core.messages import ToolMessage, AIMessage
 from app.common.json_utils import extract_json
 from app.core.config import settings
 from app.llm import get_chat_llm
+from app.llm.prompts import load_prompt
 from app.services.client.position_agent_tools import POSITION_AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -32,65 +33,12 @@ def get_llm() -> ChatOpenAI:
     return get_chat_llm(temperature=0.3)
 
 
-# ── 系统 Prompt ─────────────────────────────────────────────────────────
+# ── 系统 Prompt（从 YAML 加载）───────────────────────────────────────────
 
-SYSTEM_PROMPT = """你是一个专业的岗位匹配 AI 顾问，目标是帮助求职者找到最合适的正式岗位。
-
-# 工作流程（严格按此顺序调用工具）
-
-1. 调用 `get_parsed_resume` 获取候选人简历
-2. 把上一步返回的 parsed_resume 传给 `build_candidate_profile`，提炼候选人画像
-3. 把画像传给 `match_positions`，匹配 Top 3 推荐岗位
-4. 对推荐 Top 1 的岗位调用 `get_position_interview_focus`，获取它的面试方向
-5. 综合所有工具结果，输出最终的结构化推荐 JSON
-
-# 重要规则
-
-- 不要跳过任何步骤
-- 不要在工具调用之外编造信息
-- 推荐理由要具体可解释（结合候选人项目/技能），不要泛泛而谈
-- 缺失能力要可执行，便于用户改进
-- 最终输出**必须**是纯 JSON 格式（不要包 markdown 代码块），结构如下：
-
-```json
-{{
-  "candidate_profile": {{
-    "experience_level": "campus / junior / mid / senior",
-    "primary_stack": [...],
-    "secondary_stack": [...],
-    "project_directions": [...],
-    "strong_points": [...],
-    "weak_points": [...]
-  }},
-  "recommended_positions": [
-    {{
-      "position_tag": "...",
-      "title": "...",
-      "match_score": 0.84,
-      "reasons": [...],
-      "missing_skills": [...]
-    }}
-  ],
-  "top_position_focus": {{
-    "position_tag": "...",
-    "focus_topics": [...],
-    "recommended_difficulty": "...",
-    "recommended_question_count": 8
-  }},
-  "next_actions": [
-    "3 条具体可执行的下一步建议",
-    "结合缺失技能给出练习方向",
-    "推荐进入哪个岗位的模拟面试"
-  ]
-}}
-```
-
-# 注意
-
-- 输出严格按上述 JSON 结构，不要多加字段
-- next_actions 要 3 条左右，结合最匹配岗位的 focus_topics 和缺失技能给出具体建议
-- 如果某个工具返回 error，把错误信息透传到最终输出的 next_actions 里，不要继续调用后续工具
-"""
+def _get_system_prompt() -> str:
+    """从 position_agent_system.yaml 加载系统 Prompt"""
+    prompt = load_prompt("position_agent_system")
+    return prompt.messages[0].prompt.template
 
 
 # ── 全局 Agent 实例（懒加载）────────────────────────────────────────────
@@ -104,7 +52,7 @@ def get_agent():
         _agent = create_agent(
             model=get_llm(),
             tools=POSITION_AGENT_TOOLS,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=_get_system_prompt(),
         )
     return _agent
 

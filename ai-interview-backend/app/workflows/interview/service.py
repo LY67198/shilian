@@ -52,16 +52,18 @@ async def submit_answer(
 
     graph = await get_compiled_graph()
     milvus_client = get_milvus_client()
-    config = {"configurable": {"thread_id": f"interview-{interview_id}"}}
-
     checkpointer = graph.checkpointer
-    checkpoint = await checkpointer.aget(config)
+
+    # Determine if this is the first call BEFORE building config
+    # (retrieval_check_service needs this flag)
+    checkpoint = await checkpointer.aget(
+        {"configurable": {"thread_id": f"interview-{interview_id}"}}
+    )
     is_first_call = checkpoint is None
 
-    state_data = {
-        "answer": answer,
-        "stream": stream,
-        "custom": {
+    config = {
+        "configurable": {
+            "thread_id": f"interview-{interview_id}",
             "db": db,
             "milvus_client": milvus_client,
             "evaluator_agent": EvaluatorAgent(),
@@ -70,6 +72,11 @@ async def submit_answer(
                 milvus_client, is_first_call
             ),
         },
+    }
+
+    state_data = {
+        "answer": answer,
+        "stream": stream,
     }
 
     if is_first_call:

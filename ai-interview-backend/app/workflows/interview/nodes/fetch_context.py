@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +15,12 @@ from app.workflows.interview.state import InterviewState
 logger = logging.getLogger(__name__)
 
 
-async def fetch_context_node(state: InterviewState) -> dict:
+async def fetch_context_node(state: InterviewState, config: RunnableConfig) -> dict:
     """查询面试/简历/对话历史/当前题，写入 state"""
     interview_id = state["interview_id"]
     user_id = state["user_id"]
 
-    custom = state.get("custom") or {}
-    db: AsyncSession = custom.get("db")
-    if not db:
-        raise RuntimeError("fetch_context_node requires db session in state.custom.db")
+    db: AsyncSession = config["configurable"]["db"]
 
     # 查面试记录
     interview = await interview_repo.get_by_id_for_user(db, interview_id, user_id)

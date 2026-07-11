@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.interview_repo import interview_repo
@@ -11,12 +12,9 @@ from app.workflows.interview.state import InterviewState
 logger = logging.getLogger(__name__)
 
 
-async def ask_question_node(state: InterviewState) -> dict:
+async def ask_question_node(state: InterviewState, config: RunnableConfig) -> dict:
     """current_index += 1, 存下一题的 InterviewMessage"""
-    custom = state.get("custom") or {}
-    db: AsyncSession = custom.get("db")
-    if not db:
-        raise RuntimeError("ask_question_node requires db session in state.custom.db")
+    db: AsyncSession = config["configurable"]["db"]
 
     interview_id = state["interview_id"]
     current_index = state["current_index"]

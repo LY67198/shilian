@@ -88,5 +88,6 @@ async def astream_to_sse(
 
 
 def _sse(event: str, data: dict) -> str:
-    """生成 SSE 格式字符串"""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    """生成 SSE 格式字符串（sse-starlette ServerSentEvent）"""
+    from sse_starlette.sse import ServerSentEvent
+    return ServerSentEvent(data=json.dumps(data, ensure_ascii=False), event=event).encode().decode()

@@ -3,20 +3,17 @@ from __future__ import annotations
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.workflows.interview.state import InterviewState
 
 logger = logging.getLogger(__name__)
 
 
-async def evaluate_node(state: InterviewState) -> dict:
+async def evaluate_node(state: InterviewState, config: RunnableConfig) -> dict:
     """评估候选人回答，委托 EvaluatorAgent"""
-    custom = state.get("custom") or {}
-    agent: EvaluatorAgent = custom.get("evaluator_agent")
-
-    if agent is None:
-        logger.warning("evaluator_agent not found in state.custom, using default")
-        agent = EvaluatorAgent()
+    agent: EvaluatorAgent = config["configurable"].get("evaluator_agent", EvaluatorAgent())
 
     result = await agent.evaluate(
         question=state.get("current_question", ""),

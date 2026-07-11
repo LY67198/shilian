@@ -10,7 +10,7 @@ export function submitAnswer(interviewId, answer) {
 
 export async function submitAnswerStream(interviewId, answer, onChunk, onDone, signal) {
   const authStore = (await import('../stores/auth')).useAuthStore()
-  const response = await fetch(`/api/v1/interviews/${interviewId}/answer/stream`, {
+  const response = await fetch(`/api/v1/interviews/${interviewId}/answer?stream=true`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

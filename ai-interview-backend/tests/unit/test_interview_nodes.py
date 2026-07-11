@@ -87,9 +87,14 @@ class TestEvaluateNode:
         return MockAgent()
 
     async def test_returns_score_and_feedback(self):
-        """验证 evaluate_node 通过 state.custom.evaluator_agent 获取 agent 并返回 score + feedback"""
+        """验证 evaluate_node 通过 config.configurable.evaluator_agent 获取 agent 并返回 score + feedback"""
         from app.workflows.interview.nodes.evaluate import evaluate_node
 
+        config = {
+            "configurable": {
+                "evaluator_agent": self._mock_agent(score=7.5, feedback="回答良好"),
+            },
+        }
         state = {
             "current_question": "请介绍 Python 的 GIL",
             "answer": "GIL 是全局解释器锁...",
@@ -98,16 +103,13 @@ class TestEvaluateNode:
             "knowledge_context": [],
             "interview_id": 1,
             "user_id": 42,
-            "custom": {
-                "evaluator_agent": self._mock_agent(score=7.5, feedback="回答良好"),
-            },
         }
-        result = await evaluate_node(state)
+        result = await evaluate_node(state, config)
         assert result["score"] == 7.5
         assert result["feedback"] == "回答良好"
 
-    async def test_fallback_when_agent_not_in_custom(self):
-        """agent 不在 state.custom 时使用默认 EvaluatorAgent（无外部依赖则不测 LLM 调用）"""
+    async def test_fallback_when_agent_not_in_config(self):
+        """agent 不在 config 时使用默认 EvaluatorAgent（无外部依赖则不测 LLM 调用）"""
         from app.workflows.interview.nodes.evaluate import evaluate_node
 
         state = {
@@ -131,7 +133,7 @@ class TestEvaluateNode:
             new_callable=AsyncMock,
             return_value=ScoreResult(score=5.0, feedback="评分异常，已记录"),
         ):
-            result = await evaluate_node(state)
+            result = await evaluate_node(state, {"configurable": {}})
         assert result["score"] == 5.0
         assert "评分异常" in result["feedback"]
 

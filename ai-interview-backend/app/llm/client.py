@@ -75,6 +75,13 @@ from openai import (
     InternalServerError,
     RateLimitError,
 )
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 
 _RETRYABLE_ERRORS = (
     APIConnectionError,
@@ -84,7 +91,6 @@ _RETRYABLE_ERRORS = (
     asyncio.TimeoutError,
 )
 _MAX_RETRIES = 3
-_RETRY_DELAYS = (1, 2, 4)  # 指数退避（秒）
 
 _raw_client: Optional[AsyncOpenAI] = None
 
@@ -100,14 +106,31 @@ def _get_raw_client() -> AsyncOpenAI:
     return _raw_client
 
 
+@retry(
+    retry=retry_if_exception_type(_RETRYABLE_ERRORS),
+    stop=stop_after_attempt(_MAX_RETRIES + 1),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+async def _create_completion(client: AsyncOpenAI, messages: list, temperature: float, max_tokens: int, stream: bool):
+    """执行单次 LLM 调用（带 tenacity 自动重试）"""
+    return await client.chat.completions.create(
+        model=settings.DEEPSEEK_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=stream,
+    )
+
+
 async def chat_completion(
     messages: list,
     temperature: float = 0.7,
     max_tokens: int = 2000,
     stream: bool = False,
 ):
-    """
-    带指数退避的 LLM 调用（兼容旧 ai_service 风格）
+    """带指数退避的 LLM 调用（兼容旧 ai_service 风格）
 
     Args:
         messages: OpenAI 风格 messages 列表
@@ -119,35 +142,14 @@ async def chat_completion(
         字符串 or 异步生成器
     """
     client = _get_raw_client()
-    last_exc: Optional[Exception] = None
-
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            response = await client.chat.completions.create(
-                model=settings.DEEPSEEK_MODEL,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=stream,
-            )
-            if stream:
-                return _stream_chunks(response, client)
-            return response.choices[0].message.content.strip()
-        except _RETRYABLE_ERRORS as e:
-            last_exc = e
-            if attempt < _MAX_RETRIES:
-                delay = _RETRY_DELAYS[attempt]
-                logger.warning(
-                    f"LLM 调用失败（第 {attempt + 1}/{_MAX_RETRIES} 次重试），"
-                    f"{delay}s 后重试: {e}"
-                )
-                await asyncio.sleep(delay)
-        except Exception as e:
-            logger.error(f"LLM 调用失败（不可重试）: {e}")
-            raise
-
-    logger.error(f"LLM 调用彻底失败（已重试 {_MAX_RETRIES} 次）: {last_exc}")
-    raise last_exc
+    try:
+        response = await _create_completion(client, messages, temperature, max_tokens, stream)
+        if stream:
+            return _stream_chunks(response, client)
+        return response.choices[0].message.content.strip()
+    except _RETRYABLE_ERRORS as e:
+        logger.error(f"LLM 调用彻底失败（已重试 {_MAX_RETRIES} 次）: {e}")
+        raise
 
 
 async def _stream_chunks(stream, client):

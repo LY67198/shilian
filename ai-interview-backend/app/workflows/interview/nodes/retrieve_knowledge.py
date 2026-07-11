@@ -3,26 +3,25 @@ from __future__ import annotations
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
+
 from app.workflows.interview.state import InterviewState
 
 logger = logging.getLogger(__name__)
 
 
-async def retrieve_knowledge_node(state: InterviewState) -> dict:
+async def retrieve_knowledge_node(state: InterviewState, config: RunnableConfig) -> dict:
     """用当前题目检索知识库（hybrid pipeline + self-check loop）。
 
     Delegates to RetrievalCheckService which runs the full hybrid pipeline
     (vector + BM25 + RRF + rerank) with self-check query rewriting.
-
-    The check service instance is stored in state.custom.retrieval_check_service
-    (set up at interview start in submit_answer).
     """
     current_question = state.get("current_question", "")
 
     if not current_question:
         return {"knowledge_context": []}
 
-    check_service = (state.get("custom") or {}).get("retrieval_check_service")
+    check_service = config["configurable"].get("retrieval_check_service")
     if check_service is None:
         logger.warning("RetrievalCheckService 不可用，回退到空 knowledge_context")
         return {"knowledge_context": []}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.report_agent import ReportAgent
@@ -12,17 +13,10 @@ from app.workflows.interview.state import InterviewState
 logger = logging.getLogger(__name__)
 
 
-async def generate_report_node(state: InterviewState) -> dict:
+async def generate_report_node(state: InterviewState, config: RunnableConfig) -> dict:
     """汇总所有评分，委托 ReportAgent 生成报告"""
-    custom = state.get("custom") or {}
-    db: AsyncSession = custom.get("db")
-    if not db:
-        raise RuntimeError("generate_report_node requires db session in state.custom.db")
-
-    agent: ReportAgent = custom.get("report_agent")
-    if agent is None:
-        logger.warning("report_agent not found in state.custom, using default")
-        agent = ReportAgent()
+    db: AsyncSession = config["configurable"]["db"]
+    agent: ReportAgent = config["configurable"].get("report_agent", ReportAgent())
 
     interview_id = state["interview_id"]
     questions = state["questions"]

@@ -46,18 +46,32 @@ def send_verification_email_task(self, email: str, verification_code: str, code_
         raise exc
 
 
-@celery_app.task
-def send_welcome_email_task(email: str, user_name: str):
-    """
-    发送欢迎邮件任务（可选，未来扩展）
+@celery_app.task(bind=True, max_retries=3)
+def send_welcome_email_task(self, email: str, user_name: str, dashboard_url: str = "https://mockpilot.com/dashboard"):
+    """异步发送欢迎邮件
 
     Args:
         email: 收件人邮箱
         user_name: 用户名
+        dashboard_url: 仪表盘 URL
     """
-    # TODO: 实现欢迎邮件发送逻辑
-    print(f"欢迎邮件任务 {email} ({user_name}) - 尚未实现")
-    return {"status": "not_implemented", "email": email, "user_name": user_name}
+    try:
+        import asyncio
+        from app.services.common.email_smtp import send_welcome_email
+
+        asyncio.run(send_welcome_email(
+            email=email,
+            first_name=user_name or "User",
+            dashboard_url=dashboard_url,
+        ))
+
+        return {"status": "success", "email": email, "type": "welcome"}
+
+    except Exception as exc:
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            self.retry(countdown=countdown, exc=exc)
+        raise exc
 
 
 @celery_app.task(bind=True, max_retries=3)

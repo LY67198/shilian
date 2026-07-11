@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,28 +37,20 @@ async def start_interview(
 async def submit_answer(
     interview_id: int,
     data: AnswerSubmit,
+    stream: bool = Query(default=False, description="是否使用 SSE 流式返回"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """提交当前题目的回答（非流式）"""
-    async for result in submit_answer_to_graph(
-        db=db,
-        user_id=current_user.id,
-        interview_id=interview_id,
-        answer=data.answer,
-        stream=False,
-    ):
-        return ApiResponse.success(data=result)
-
-
-@router.post("/{interview_id}/answer/stream")
-async def submit_answer_stream(
-    interview_id: int,
-    data: AnswerSubmit,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """提交回答并通过 SSE 流式返回 AI 评估"""
+    """提交当前题目的回答（?stream=true 启动 SSE 流式评分）"""
+    if not stream:
+        async for result in submit_answer_to_graph(
+            db=db,
+            user_id=current_user.id,
+            interview_id=interview_id,
+            answer=data.answer,
+            stream=False,
+        ):
+            return ApiResponse.success(data=result)
 
     async def event_generator():
         async for sse_str in submit_answer_to_graph(
