@@ -113,8 +113,8 @@ def get_agent():
 
 class PositionAgentService:
 
-    @staticmethod
     async def run_agent(
+        self,
         resume_id: int,
         target_direction: str | None = None,
     ) -> dict:
@@ -200,3 +200,6 @@ class PositionAgentService:
             "result": result,
             "intermediate_steps": steps_summary,
         }
+
+
+position_agent_service = PositionAgentService()

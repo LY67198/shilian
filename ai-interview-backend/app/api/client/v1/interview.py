@@ -4,10 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.client.deps import get_current_user
 from app.db.session import get_db
+from app.deps import get_interview_service
 from app.models.user import User
 from app.schemas.client.interview import InterviewStart, AnswerSubmit
 from app.schemas.response import ApiResponse
-from app.services.client.interview_service import interview_service
+from app.services.client.interview_service import InterviewService
 from app.workflows.interview.service import interview_graph_service
 
 router = APIRouter()
@@ -18,6 +19,7 @@ async def start_interview(
     data: InterviewStart,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    interview_service: InterviewService = Depends(get_interview_service),
 ):
     """开始新的 AI 面试会话"""
     result = await interview_service.start_interview(
@@ -84,6 +86,7 @@ async def get_report(
     interview_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    interview_service: InterviewService = Depends(get_interview_service),
 ):
     """获取面试评估报告"""
     result = await interview_service.get_report(
@@ -99,6 +102,7 @@ async def get_messages(
     interview_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    interview_service: InterviewService = Depends(get_interview_service),
 ):
     """获取面试的所有对话消息"""
     result = await interview_service.get_interview_messages(
@@ -113,6 +117,7 @@ async def get_messages(
 async def get_interviews(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    interview_service: InterviewService = Depends(get_interview_service),
 ):
     """获取当前用户的所有面试记录"""
     result = await interview_service.get_interviews(
@@ -127,6 +132,7 @@ async def delete_interview(
     interview_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    interview_service: InterviewService = Depends(get_interview_service),
 ):
     """删除面试记录"""
     result = await interview_service.delete_interview(

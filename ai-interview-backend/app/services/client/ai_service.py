@@ -19,8 +19,7 @@ class AIService:
 
     # ── 底层 LLM 调用 ──────────────────────────────────────────────
 
-    @staticmethod
-    async def _chat(messages: list, temperature: float = 0.7) -> str:
+    async def _chat(self, messages: list, temperature: float = 0.7) -> str:
         """基础对话补全（委托给 app.llm.chat_completion）"""
         return await chat_completion(
             messages=messages,
@@ -29,8 +28,7 @@ class AIService:
             stream=False,
         )
 
-    @staticmethod
-    async def _chat_stream(messages: list, temperature: float = 0.7):
+    async def _chat_stream(self, messages: list, temperature: float = 0.7):
         """流式对话补全（委托给 app.llm.chat_completion）"""
         gen = await chat_completion(
             messages=messages,
@@ -43,26 +41,23 @@ class AIService:
 
     # ── JSON 解析（委托到 shared utility）─────────────────────────────
 
-    @staticmethod
-    def _extract_json(text: str) -> dict:
+    def _extract_json(self, text: str) -> dict:
         """从 AI 响应中提取 JSON（委托到 app.common.json_utils.extract_json）"""
         from app.common.json_utils import extract_json
         return extract_json(text)
 
     # ── 出题方法（YAML prompt）─────────────────────────────────────
 
-    @staticmethod
-    async def parse_resume(resume_text: str) -> dict:
+    async def parse_resume(self, resume_text: str) -> dict:
         """解析简历文本，提取结构化信息（姓名、学历、技能、经历等）"""
         prompt = load_prompt("resume_parse")
         llm = get_chat_llm(temperature=0.3)
         chain = prompt | llm
         result = await chain.ainvoke({"resume_text": resume_text})
         content = result.content if hasattr(result, "content") else str(result)
-        return AIService._extract_json(content)
+        return self._extract_json(content)
 
-    @staticmethod
-    async def analyze_resume(parsed_resume: dict, target_position: str) -> dict:
+    async def analyze_resume(self, parsed_resume: dict, target_position: str) -> dict:
         """分析简历质量，给出评分、优劣势和改进建议"""
         is_intern = any(kw in target_position.lower() for kw in ["实习", "intern"])
         if is_intern:
@@ -89,10 +84,10 @@ class AIService:
             "resume_json": json.dumps(parsed_resume, ensure_ascii=False),
         })
         content = result.content if hasattr(result, "content") else str(result)
-        return AIService._extract_json(content)
+        return self._extract_json(content)
 
-    @staticmethod
     async def generate_questions(
+        self,
         parsed_resume: dict,
         target_position: str,
         difficulty: str,
@@ -124,10 +119,10 @@ class AIService:
             "count": count,
         })
         content = result.content if hasattr(result, "content") else str(result)
-        return AIService._extract_json(content)
+        return self._extract_json(content)
 
-    @staticmethod
     async def select_and_adapt_questions(
+        self,
         candidates: list,
         parsed_resume: dict,
         target_position: str,
@@ -155,10 +150,10 @@ class AIService:
             "candidates_json": json.dumps(candidates, ensure_ascii=False),
         })
         content = result.content if hasattr(result, "content") else str(result)
-        return AIService._extract_json(content)
+        return self._extract_json(content)
 
-    @staticmethod
     async def generate_with_seeds(
+        self,
         seed_questions: list,
         parsed_resume: dict,
         target_position: str,
@@ -186,4 +181,7 @@ class AIService:
             "seed_json": json.dumps(seed_questions, ensure_ascii=False),
         })
         content = result.content if hasattr(result, "content") else str(result)
-        return AIService._extract_json(content)
+        return self._extract_json(content)
+
+
+ai_service = AIService()

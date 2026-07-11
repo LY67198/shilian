@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
+from app.deps import get_client_waiting_list_service
 from app.schemas.waiting_list import (
     WaitingListSubmitRequest,
     WaitingListSubmitResponse,
     WaitingListResendRequest,
     WaitingListVerifyResponse
 )
-from app.services.client.waiting_list import waiting_list_service
+from app.services.client.waiting_list import WaitingListService
 from app.schemas.response import ApiResponse
 
 router = APIRouter()
@@ -17,7 +18,8 @@ router = APIRouter()
 async def submit_waiting_list(
     request: WaitingListSubmitRequest,
     req: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    waiting_list_service: WaitingListService = Depends(get_client_waiting_list_service),
 ):
     """
     Submit waiting list application
@@ -38,7 +40,8 @@ async def submit_waiting_list(
 @router.get("/verify")
 async def verify_waiting_list_email(
     token: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    waiting_list_service: WaitingListService = Depends(get_client_waiting_list_service),
 ):
     """
     Verify waiting list email
@@ -51,7 +54,8 @@ async def verify_waiting_list_email(
 async def resend_waiting_list_verification(
     request: WaitingListResendRequest,
     req: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    waiting_list_service: WaitingListService = Depends(get_client_waiting_list_service),
 ):
     """
     Resend waiting list verification email

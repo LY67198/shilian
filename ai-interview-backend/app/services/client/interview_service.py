@@ -10,8 +10,8 @@ from app.exceptions.http_exceptions import NotFoundError, ValidationError
 from app.models.interview import Interview
 from app.models.interview_message import InterviewMessage
 from app.models.resume import Resume
-from app.services.backoffice.question_bank_service import QuestionBankService
-from app.services.client.ai_service import AIService
+from app.services.backoffice.question_bank_service import question_bank_service
+from app.services.client.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,8 @@ def _build_retrieval_query(target_position: str, parsed_resume: dict) -> str:
 
 class InterviewService:
 
-    @staticmethod
     async def _generate_questions_with_rag(
+        self,
         db: AsyncSession,
         parsed_resume: dict,
         target_position: str,
@@ -110,7 +110,7 @@ class InterviewService:
                             })
             else:
                 # Fallback: BM25 not available, use old vector-only path
-                candidates = await QuestionBankService.retrieve_questions(
+                candidates = await question_bank_service.retrieve_questions(
                     query=query,
                     db=db,
                     k=recall_k,
@@ -119,7 +119,7 @@ class InterviewService:
                     min_score=settings.QUESTION_BANK_MIN_SCORE,
                 )
                 if len(candidates) < total_questions:
-                    relaxed = await QuestionBankService.retrieve_questions(
+                    relaxed = await question_bank_service.retrieve_questions(
                         query=query,
                         db=db,
                         k=recall_k,
@@ -140,7 +140,7 @@ class InterviewService:
 
         if cnt >= total_questions:
             logger.info(f"[RAG出题] 走【题库充分】分支")
-            questions = await AIService.select_and_adapt_questions(
+            questions = await ai_service.select_and_adapt_questions(
                 candidates=candidates,
                 parsed_resume=parsed_resume,
                 target_position=target_position,
@@ -149,7 +149,7 @@ class InterviewService:
             )
         elif cnt > 0:
             logger.info(f"[RAG出题] 走【AI 兜底补全】分支（题库 {cnt} 题 + AI 补 {total_questions - cnt} 题）")
-            questions = await AIService.generate_with_seeds(
+            questions = await ai_service.generate_with_seeds(
                 seed_questions=candidates,
                 parsed_resume=parsed_resume,
                 target_position=target_position,
@@ -158,7 +158,7 @@ class InterviewService:
             )
         else:
             logger.warning(f"[RAG出题] 题库为空，走【纯 AI 生成】兜底分支")
-            questions = await AIService.generate_questions(
+            questions = await ai_service.generate_questions(
                 parsed_resume=parsed_resume,
                 target_position=target_position,
                 difficulty=difficulty,
@@ -170,8 +170,8 @@ class InterviewService:
 
         return questions
 
-    @staticmethod
     async def start_interview(
+        self,
         db: AsyncSession,
         user_id: int,
         resume_id: int,
@@ -200,7 +200,7 @@ class InterviewService:
             raise ValidationError(message="简历数据异常，请重新上传")
 
         # ── RAG 出题流程：题库召回优先 + AI 兜底 ──────────────────────
-        questions = await InterviewService._generate_questions_with_rag(
+        questions = await self._generate_questions_with_rag(
             db=db,
             parsed_resume=parsed_resume,
             target_position=target_position,
@@ -211,7 +211,7 @@ class InterviewService:
         # 题库选中题目，累加 use_count
         bank_ids = [q.get("bank_id") for q in questions if q.get("bank_id")]
         if bank_ids:
-            await QuestionBankService.increment_use_count(db, bank_ids)
+            await question_bank_service.increment_use_count(db, bank_ids)
 
         # 创建面试记录
         interview = Interview(
@@ -246,8 +246,8 @@ class InterviewService:
             "total_questions": total_questions
         }
 
-    @staticmethod
     async def get_report(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
@@ -279,8 +279,8 @@ class InterviewService:
             "report": report
         }
 
-    @staticmethod
     async def get_interviews(
+        self,
         db: AsyncSession,
         user_id: int
     ) -> Dict:
@@ -309,8 +309,8 @@ class InterviewService:
             "items": items
         }
 
-    @staticmethod
     async def get_interview_messages(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
@@ -345,8 +345,8 @@ class InterviewService:
             for m in messages
         ]
 
-    @staticmethod
     async def delete_interview(
+        self,
         db: AsyncSession,
         user_id: int,
         interview_id: int
@@ -372,8 +372,8 @@ class InterviewService:
 
         return {"message": "面试记录已删除"}
 
-    @staticmethod
     async def delete_interview_admin(
+        self,
         db: AsyncSession,
         interview_id: int
     ) -> Dict:

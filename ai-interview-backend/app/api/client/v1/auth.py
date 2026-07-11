@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.api.client.deps import get_current_user
+from app.deps import get_client_auth_service
 from app.schemas.client.auth import (
     UserRegister, RegisterResponse, Login, AuthToken, AccessToken,
     RefreshTokenRequest, LogoutRequest, SendVerificationCode, SendCodeResponse,
@@ -9,7 +10,7 @@ from app.schemas.client.auth import (
     PasswordResetToken, ResetPassword
 )
 from app.schemas.client.user import UserProfile
-from app.services.client.auth import client_auth_service
+from app.services.client.auth import ClientAuthService
 from app.schemas.response import ApiResponse
 from app.models.user import User
 from pydantic import BaseModel
@@ -22,10 +23,11 @@ router = APIRouter()
 @router.post("/register", response_model=AuthToken)
 async def register(
     user_data: UserRegister,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """用户注册（直接注册并登录）"""
-    result = await client_auth_service.register_user(
+    result = await auth_service.register_user(
         db, user_data.model_dump()
     )
     return ApiResponse.success(data=result)
@@ -34,10 +36,11 @@ async def register(
 @router.post("/send-verification-code", response_model=SendCodeResponse)
 async def send_verification_code(
     request: SendVerificationCode,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """发送验证码"""
-    result = await client_auth_service.send_verification_code(
+    result = await auth_service.send_verification_code(
         db, request.email, request.code_type
     )
     return ApiResponse.success(data=result)
@@ -46,10 +49,11 @@ async def send_verification_code(
 @router.post("/verify-email", response_model=AuthToken)
 async def verify_email(
     request: VerifyEmail,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """验证邮箱并自动登录"""
-    result = await client_auth_service.verify_email_and_login(
+    result = await auth_service.verify_email_and_login(
         db, request.email, request.code
     )
     return ApiResponse.success(data=result)
@@ -58,10 +62,11 @@ async def verify_email(
 @router.post("/login", response_model=AuthToken)
 async def login(
     login_data: Login,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """用户登录"""
-    result = await client_auth_service.login(
+    result = await auth_service.login(
         db, login_data.email, login_data.password, login_data.remember_me
     )
     return ApiResponse.success(data=result)
@@ -70,30 +75,33 @@ async def login(
 @router.post("/refresh", response_model=AccessToken)
 async def refresh_token(
     request: RefreshTokenRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """刷新用户令牌"""
-    result = await client_auth_service.refresh_token(db, request.refresh_token)
+    result = await auth_service.refresh_token(db, request.refresh_token)
     return ApiResponse.success(data=result)
 
 
 @router.post("/logout")
 async def logout(
     request: LogoutRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """用户登出"""
-    await client_auth_service.logout(db, request.refresh_token)
+    await auth_service.logout(db, request.refresh_token)
     return ApiResponse.success_without_data()
 
 
 @router.post("/password-reset/send-code")
 async def send_password_reset_code(
     request: SendPasswordResetCode,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """发送密码重置验证码"""
-    result = await client_auth_service.send_verification_code(
+    result = await auth_service.send_verification_code(
         db, request.email, "password-reset"
     )
     return ApiResponse.success(data=result)
@@ -102,10 +110,11 @@ async def send_password_reset_code(
 @router.post("/password-reset/verify-code", response_model=PasswordResetToken)
 async def verify_password_reset_code(
     request: VerifyPasswordResetCode,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """验证密码重置验证码"""
-    reset_token = await client_auth_service.verify_password_reset_code(
+    reset_token = await auth_service.verify_password_reset_code(
         db, request.email, request.code
     )
     return ApiResponse.success(data={
@@ -117,10 +126,11 @@ async def verify_password_reset_code(
 @router.post("/password-reset/reset")
 async def reset_password(
     request: ResetPassword,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    auth_service: ClientAuthService = Depends(get_client_auth_service),
 ):
     """重置密码"""
-    await client_auth_service.reset_password(
+    await auth_service.reset_password(
         db, request.reset_token, request.new_password
     )
     return ApiResponse.success_without_data(message="密码重置成功，请重新登录")

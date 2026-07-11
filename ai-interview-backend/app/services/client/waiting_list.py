@@ -12,8 +12,7 @@ from app.schedule.jobs.email_tasks import send_waiting_list_verification_task, s
 
 
 class WaitingListService:
-    @staticmethod
-    async def generate_verification_token(email: str, waiting_list_id: int) -> str:
+    async def generate_verification_token(self, email: str, waiting_list_id: int) -> str:
         from jose import jwt
         from datetime import datetime, UTC
         import uuid
@@ -37,8 +36,7 @@ class WaitingListService:
 
         return token
 
-    @staticmethod
-    async def verify_token(token: str) -> Dict:
+    async def verify_token(self, token: str) -> Dict:
         payload = AuthBase.verify_token(token, scope="waiting-list-verification")
         if not payload:
             raise APIException(status_code=400, message="无效或已过期的验证链接")
@@ -56,8 +54,7 @@ class WaitingListService:
 
         return payload
 
-    @staticmethod
-    async def check_ip_rate_limit(ip_address: str) -> None:
+    async def check_ip_rate_limit(self, ip_address: str) -> None:
         redis_key = f"waiting_list:ip:{ip_address}"
         count_str = await redis_client.get(redis_key)
 
@@ -72,8 +69,8 @@ class WaitingListService:
         else:
             await redis_client.set_with_ttl(redis_key, "1", 3600)
 
-    @staticmethod
     async def submit_application(
+        self,
         db: AsyncSession,
         data: Dict,
         ip_address: str,
@@ -89,10 +86,10 @@ class WaitingListService:
                 message="该邮箱已在等待列表中"
             )
 
-        await WaitingListService.check_ip_rate_limit(ip_address)
+        await self.check_ip_rate_limit(ip_address)
 
         if existing and not existing.is_verified:
-            token = await WaitingListService.generate_verification_token(
+            token = await self.generate_verification_token(
                 data["email"],
                 existing.id
             )
@@ -120,7 +117,7 @@ class WaitingListService:
             db.add(new_record)
             await db.flush()
 
-            token = await WaitingListService.generate_verification_token(
+            token = await self.generate_verification_token(
                 data["email"],
                 new_record.id
             )
@@ -136,9 +133,8 @@ class WaitingListService:
                 "message": "请查收邮箱进行验证"
             }
 
-    @staticmethod
-    async def verify_email(db: AsyncSession, token: str) -> Dict:
-        payload = await WaitingListService.verify_token(token)
+    async def verify_email(self, db: AsyncSession, token: str) -> Dict:
+        payload = await self.verify_token(token)
         waiting_list_id = int(payload.get("sub"))
         email = payload.get("email")
 
@@ -177,8 +173,7 @@ class WaitingListService:
                 "verified_at": record.verified_at
             }
 
-    @staticmethod
-    async def resend_verification(db: AsyncSession, email: str, ip_address: str) -> Dict:
+    async def resend_verification(self, db: AsyncSession, email: str, ip_address: str) -> Dict:
         query = select(WaitingList).where(WaitingList.email == email)
         result = await db.execute(query)
         record = result.scalar_one_or_none()
@@ -189,9 +184,9 @@ class WaitingListService:
         if record.is_verified:
             raise APIException(status_code=400, message="该邮箱已验证")
 
-        await WaitingListService.check_ip_rate_limit(ip_address)
+        await self.check_ip_rate_limit(ip_address)
 
-        token = await WaitingListService.generate_verification_token(email, record.id)
+        token = await self.generate_verification_token(email, record.id)
 
         send_waiting_list_verification_task.delay(
             email,
