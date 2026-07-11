@@ -214,6 +214,10 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 - **Phase 2 实施完成**（2026-07-10）：核心面试 LangGraph 化 + 4 个 P0 bug 修复 + YAML prompt 激活 + JSON 解析兜底
 - **Phase 3 完成**（2026-07-11）：RAG 管线升级 Spec + 16 任务全部实施完成。含 app/retrieval/ 模块（vector + BM25 + RRF + rerank + pipeline）、app/workflows/retrieval_check/ 自检循环、eval/ 评估框架（golden set + RAGAS）
 
+- **过度封装清理**（2026-07-11）：代码审计，删除/简化 6 项过封装类 + 1 项死代码。MilvusClientWrapper / AuthBase / InterviewGraphService 三类空壳类改为模块级函数，BaseRepository 精简，email_brevo.py 删除。净删 ~140 行，测试 51/51 pass。
+
+- **审计未处理项**（2026-07-11）：email 合并、自定义分页器、自定义重试、SSE 格式、日志分发 — 详见"已知技术债"
+
 ### 重构路线（4 个 Phase）
 
 > 路线图于 2026-07-10 重排，详见 `docs/superpowers/specs/2026-07-10-phase-2-4-roadmap-redesign.md`
@@ -302,8 +306,19 @@ cd ai-interview-admin && npm install && npm run dev       # → localhost:3001
 ### 已知技术债（不阻塞，按 Phase 解决）
 
 - [x] ~~`interview_service`、`ai_service` 全 `@staticmethod`，无 DI，不可 mock~~ — **Phase 4 已解决**
-- position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML — **后续优化**
-- Graph nodes 通过 `state.custom.db` 传 DB session，非标准 DI — **后续优化**
+- [x] ~~MilvusClientWrapper — 48 行 @classmethod-only 类~~ — **2026-07-11 改为模块级函数**
+- [x] ~~AuthBase — 7 @staticmethod 的类做命名空间~~ — **2026-07-11 改为模块级函数**
+- [x] ~~InterviewGraphService — 空壳类（submit_answer 无 self，有隐含 Runtime bug）~~ — **2026-07-11 改为模块级函数**
+- [x] ~~BaseRepository — list_all/count/create/delete 全链路无调用~~ — **2026-07-11 精简为仅 get_by_id**
+- [x] ~~email_brevo.py — 死代码（0 imports）~~ — **2026-07-11 已删除**
+- [x] ~~ai_service._extract_json — 缺 @staticmethod 导致 10 个测试失败~~ — **2026-07-11 已修复**
+- [ ] `email_smtp.py`（347 行）与 `email.py` 功能重复，需合并为一套 email 实现
+- [ ] 自定义分页器 `paginator.py`（194 行）→ 可用 `fastapi-pagination` 替代
+- [ ] 自定义重试循环 `llm/client.py:chat_completion()` ~80 行 → 可用 `tenacity` 替代
+- [ ] `_sse()` 手写 `f"event: {event}\ndata: {json.dumps(...)}\n\n"` — 与自身 CLAUDE.md 规则矛盾，应用 `sse-starlette`
+- [ ] 自定义日志分发 `log_config.py` + `log_consumer.py`（~167 行）→ 可用 stdlib `QueueHandler`/`QueueListener`
+- [ ] position_agent 的 SYSTEM_PROMPT 仍是 Python 字符串常量，未切 YAML
+- [ ] Graph nodes 通过 `state.custom.db` 传 DB session，非标准 DI
 
 ### Milvus 关键 bug 已修（Phase 0-1）
 - ✅ service 层不再调已删除的 `KnowledgeChunk.embedding.cosine_distance` 列
