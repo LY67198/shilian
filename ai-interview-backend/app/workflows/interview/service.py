@@ -7,6 +7,8 @@ from typing import AsyncIterator
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.evaluator_agent import EvaluatorAgent
+from app.agents.report_agent import ReportAgent
 from app.core.config import settings
 from app.models.interview_message import InterviewMessage
 from app.retrieval.bm25_lifecycle import get_knowledge_bm25
@@ -65,6 +67,8 @@ class InterviewGraphService:
             "custom": {
                 "db": db,
                 "milvus_client": milvus_client,
+                "evaluator_agent": EvaluatorAgent(),
+                "report_agent": ReportAgent(),
                 "retrieval_check_service": _build_retrieval_check_service(
                     milvus_client, is_first_call
                 ),
