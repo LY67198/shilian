@@ -135,5 +135,42 @@ class InterviewRepository(BaseRepository[Interview]):
         return msg
 
 
+    async def get_by_id_with_messages(
+        self, db: AsyncSession, interview_id: int
+    ) -> Optional[Interview]:
+        """Eager load interview + messages + resume，一次查询"""
+        from sqlalchemy.orm import selectinload
+
+        stmt = (
+            select(Interview)
+            .options(
+                selectinload(Interview.messages),
+                selectinload(Interview.resume),
+            )
+            .where(Interview.id == interview_id)
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def delete_cascade(self, db: AsyncSession, interview_id: int) -> bool:
+        """删除 interview + 关联 messages（事务内完成）"""
+        from sqlalchemy import delete as sa_delete
+
+        from app.models.interview_message import InterviewMessage
+
+        interview = await self.get_by_id(db, interview_id)
+        if interview is None:
+            return False
+
+        await db.execute(
+            sa_delete(InterviewMessage).where(
+                InterviewMessage.interview_id == interview_id
+            )
+        )
+        await db.delete(interview)
+        await db.flush()
+        return True
+
+
 # 默认单例
 interview_repo = InterviewRepository()
