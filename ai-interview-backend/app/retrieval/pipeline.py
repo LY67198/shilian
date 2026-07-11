@@ -13,6 +13,7 @@ from app.retrieval.bm25 import BM25Index
 from app.retrieval.rerank import cross_encoder_rerank
 from app.retrieval.rrf import rrf_fuse
 from app.retrieval.vector import vector_search
+from app.workflows._shared.tracing import trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -56,37 +57,47 @@ class RetrievalPipeline:
         Returns:
             Ranked list of SearchResult (length <= final_top_k).
         """
-        # 1. Parallel: vector_search() + bm25_index.search() via asyncio.to_thread
-        vector_task = vector_search(
-            client=self._client,
-            query=query,
-            collection=self._collection,
-            top_k=self._vector_top_k,
-            filters=filters,
-        )
-        bm25_task = asyncio.to_thread(
-            self._bm25.search, query, self._bm25_top_k
-        )
-
-        vector_results, bm25_raw = await asyncio.gather(vector_task, bm25_task)
-
-        # 2. Convert BM25 (idx, score) tuples to SearchResult using bm25_index.get_text()
-        bm25_results = [
-            SearchResult(
-                id=idx,
-                content=self._bm25.get_text(idx),
-                score=score,
-                source="bm25",
+        # 1. Vector recall (Milvus HNSW)
+        with trace_span("vector_recall", {"query": query, "top_k": self._vector_top_k}) as span:
+            vector_results = await vector_search(
+                client=self._client,
+                query=query,
+                collection=self._collection,
+                top_k=self._vector_top_k,
+                filters=filters,
             )
-            for idx, score in bm25_raw
-        ]
+            if span:
+                span.add_outputs({"count": len(vector_results)})
 
-        # 3. rrf_fuse(vector_results, bm25_results, k=settings.RRF_K)
-        fused = rrf_fuse(vector_results, bm25_results, k=settings.RRF_K)
+        # 2. BM25 keyword search
+        with trace_span("bm25_search", {"query": query, "top_k": self._bm25_top_k}) as span:
+            bm25_raw = await asyncio.to_thread(
+                self._bm25.search, query, self._bm25_top_k
+            )
+            bm25_results = [
+                SearchResult(
+                    id=idx,
+                    content=self._bm25.get_text(idx),
+                    score=score,
+                    source="bm25",
+                )
+                for idx, score in bm25_raw
+            ]
+            if span:
+                span.add_outputs({"count": len(bm25_results)})
 
-        # 4. cross_encoder_rerank(query, fused, final_top_k) if enable_rerank
-        #    Skip rerank if enable_rerank=False or len(fused) <= 1
+        # 3. RRF fusion
+        with trace_span("rrf_fusion", {"k": settings.RRF_K}) as span:
+            fused = rrf_fuse(vector_results, bm25_results, k=settings.RRF_K)
+            if span:
+                span.add_outputs({"count": len(fused)})
+
+        # 4. Rerank (DashScope gte-rerank)
         if self._enable_rerank and len(fused) > 1:
-            return await cross_encoder_rerank(query, fused, self._final_top_k)
+            with trace_span("rerank", {"final_top_k": self._final_top_k}) as span:
+                results = await cross_encoder_rerank(query, fused, self._final_top_k)
+                if span:
+                    span.add_outputs({"count": len(results)})
+                return results
 
         return fused[:self._final_top_k]
