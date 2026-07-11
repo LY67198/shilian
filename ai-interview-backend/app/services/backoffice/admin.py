@@ -5,7 +5,7 @@ from app.schemas.backoffice.admin import AdminCreate, AdminResponse
 from app.exceptions.http_exceptions import APIException
 from typing import List, Optional
 from fastapi import status
-from app.core.security import AuthBase
+from app.core.security import get_password_hash, verify_password
 
 
 class AdminService:
@@ -21,7 +21,7 @@ class AdminService:
             )
 
         # 创建新管理员
-        hashed_password = AuthBase.get_password_hash(admin_data.password)
+        hashed_password = get_password_hash(admin_data.password)
         admin = Admin(
             email=admin_data.email,
             first_name=admin_data.first_name,
@@ -119,7 +119,7 @@ class AdminService:
 
         # 如果有密码更新，需要哈希处理
         if "password" in admin_data:
-            update_data["password"] = AuthBase.get_password_hash(admin_data["password"])
+            update_data["password"] = get_password_hash(admin_data["password"])
 
         # 更新名字
         if "first_name" in admin_data:
@@ -177,14 +177,14 @@ class AdminService:
             return False
 
         # 验证当前密码
-        if not AuthBase.verify_password(current_password, admin.password):
+        if not verify_password(current_password, admin.password):
             raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Current password is incorrect"
             )
 
         # 更新密码
-        hashed_password = AuthBase.get_password_hash(new_password)
+        hashed_password = get_password_hash(new_password)
         stmt = update(Admin).where(Admin.id == admin_id).values(password=hashed_password)
         await db.execute(stmt)
 
@@ -201,7 +201,7 @@ class AdminService:
             return False
 
         # 更新密码
-        hashed_password = AuthBase.get_password_hash(new_password)
+        hashed_password = get_password_hash(new_password)
         stmt = update(Admin).where(Admin.id == admin_id).values(password=hashed_password)
         await db.execute(stmt)
 

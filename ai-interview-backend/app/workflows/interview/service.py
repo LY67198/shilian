@@ -21,83 +21,80 @@ from app.workflows.retrieval_check.service import RetrievalCheckService
 logger = logging.getLogger(__name__)
 
 
-class InterviewGraphService:
-    """面试评估 Graph Service"""
+async def submit_answer(
+    db: AsyncSession,
+    user_id: int,
+    interview_id: int,
+    answer: str,
+    stream: bool = False,
+) -> AsyncIterator[dict | str]:
+    """提交面试回答
 
-    async def submit_answer(
-        db: AsyncSession,
-        user_id: int,
-        interview_id: int,
-        answer: str,
-        stream: bool = False,
-    ) -> AsyncIterator[dict | str]:
-        """提交面试回答
+    Args:
+        db: 数据库会话
+        user_id: 用户 ID
+        interview_id: 面试 ID
+        answer: 候选人回答文本
+        stream: 是否流式推送
 
-        Args:
-            db: 数据库会话
-            user_id: 用户 ID
-            interview_id: 面试 ID
-            answer: 候选人回答文本
-            stream: 是否流式推送
+    Yields:
+        stream=False: 单个 dict (score, feedback, is_finished, next_question, report)
+        stream=True: 多个 SSE 事件字符串
+    """
+    candidate_msg = InterviewMessage(
+        interview_id=interview_id,
+        role="candidate",
+        content=answer,
+        question_index=-1,
+    )
+    db.add(candidate_msg)
+    await db.commit()
 
-        Yields:
-            stream=False: 单个 dict (score, feedback, is_finished, next_question, report)
-            stream=True: 多个 SSE 事件字符串
-        """
-        candidate_msg = InterviewMessage(
-            interview_id=interview_id,
-            role="candidate",
-            content=answer,
-            question_index=-1,
-        )
-        db.add(candidate_msg)
-        await db.commit()
+    graph = await get_compiled_graph()
+    milvus_client = get_milvus_client()
+    config = {"configurable": {"thread_id": f"interview-{interview_id}"}}
 
-        graph = await get_compiled_graph()
-        milvus_client = get_milvus_client()
-        config = {"configurable": {"thread_id": f"interview-{interview_id}"}}
+    checkpointer = graph.checkpointer
+    checkpoint = await checkpointer.aget(config)
+    is_first_call = checkpoint is None
 
-        checkpointer = graph.checkpointer
-        checkpoint = await checkpointer.aget(config)
-        is_first_call = checkpoint is None
+    state_data = {
+        "answer": answer,
+        "stream": stream,
+        "custom": {
+            "db": db,
+            "milvus_client": milvus_client,
+            "evaluator_agent": EvaluatorAgent(),
+            "report_agent": ReportAgent(),
+            "retrieval_check_service": _build_retrieval_check_service(
+                milvus_client, is_first_call
+            ),
+        },
+    }
 
-        state_data = {
-            "answer": answer,
-            "stream": stream,
-            "custom": {
-                "db": db,
-                "milvus_client": milvus_client,
-                "evaluator_agent": EvaluatorAgent(),
-                "report_agent": ReportAgent(),
-                "retrieval_check_service": _build_retrieval_check_service(
-                    milvus_client, is_first_call
-                ),
-            },
+    if is_first_call:
+        initial_state = {
+            "interview_id": interview_id,
+            "user_id": user_id,
+            **state_data,
         }
-
-        if is_first_call:
-            initial_state = {
-                "interview_id": interview_id,
-                "user_id": user_id,
-                **state_data,
-            }
-            if stream:
-                async for sse_event in astream_to_sse(
-                    graph.astream_events(initial_state, config, version="v2")
-                ):
-                    yield sse_event
-            else:
-                result = await graph.ainvoke(initial_state, config)
-                yield _extract_response(result)
+        if stream:
+            async for sse_event in astream_to_sse(
+                graph.astream_events(initial_state, config, version="v2")
+            ):
+                yield sse_event
         else:
-            if stream:
-                async for sse_event in astream_to_sse(
-                    graph.astream_events(Command(resume=state_data), config, version="v2")
-                ):
-                    yield sse_event
-            else:
-                result = await graph.ainvoke(Command(resume=state_data), config)
-                yield _extract_response(result)
+            result = await graph.ainvoke(initial_state, config)
+            yield _extract_response(result)
+    else:
+        if stream:
+            async for sse_event in astream_to_sse(
+                graph.astream_events(Command(resume=state_data), config, version="v2")
+            ):
+                yield sse_event
+        else:
+            result = await graph.ainvoke(Command(resume=state_data), config)
+            yield _extract_response(result)
 
 
 def _extract_response(state: dict) -> dict:
@@ -144,6 +141,3 @@ def _build_retrieval_check_service(milvus_client, is_first_call: bool):
         pipeline=knowledge_pipeline,
         max_retries=settings.SELF_CHECK_MAX_RETRIES,
     )
-
-
-interview_graph_service = InterviewGraphService()

@@ -15,7 +15,7 @@ async def retrieve_knowledge_node(state: InterviewState) -> dict:
     (vector + BM25 + RRF + rerank) with self-check query rewriting.
 
     The check service instance is stored in state.custom.retrieval_check_service
-    (set up at interview start in InterviewGraphService).
+    (set up at interview start in submit_answer).
     """
     current_question = state.get("current_question", "")
 

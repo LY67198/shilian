@@ -1,9 +1,9 @@
 """Knowledge Repository — 知识库数据访问层 (PG 元数据)"""
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeChunk
@@ -36,11 +36,6 @@ class KnowledgeRepository(BaseRepository[KnowledgeChunk]):
         )
         result = await db.execute(stmt)
         return list(result.scalars().all()), total_count
-
-    async def get_by_chunk_id(
-        self, db: AsyncSession, chunk_id: int
-    ) -> Optional[KnowledgeChunk]:
-        return await self.get_by_id(db, chunk_id)
 
     async def full_text_search(
         self,

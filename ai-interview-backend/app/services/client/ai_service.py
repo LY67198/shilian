@@ -41,7 +41,8 @@ class AIService:
 
     # ── JSON 解析（委托到 shared utility）─────────────────────────────
 
-    def _extract_json(self, text: str) -> dict:
+    @staticmethod
+    def _extract_json(text: str) -> dict:
         """从 AI 响应中提取 JSON（委托到 app.common.json_utils.extract_json）"""
         from app.common.json_utils import extract_json
         return extract_json(text)

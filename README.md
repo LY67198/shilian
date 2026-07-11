@@ -28,7 +28,7 @@ RAG 质量评估 — RAGAS 离线指标（faithfulness / answer_relevancy / cont
 | 数据校验 | Pydantic 2.11 | 请求 / 响应模型 + Settings |
 | 数据库 | PostgreSQL 16 | 主业务数据 + LangGraph Checkpoint |
 | 向量数据库 | Milvus 2.4.10 | RAG 文档 / 题库嵌入与检索 |
-| 向量索引 | HNSW + COSINE | 1024 维向量近似最近邻 |
+| 向量索引 | HNSW + L2 | 1024 维向量近似最近邻（DashScope 已归一化，L2 等价 COSINE） |
 | 对象存储 | MinIO | Milvus standalone 内部存储 |
 | 缓存 / 锁 | Redis 7 | 登录限流 + Celery Broker |
 | 异步任务 | Celery 5.5 | 邮件 / 验证码发送 |
@@ -126,11 +126,11 @@ ai-interview-agent/
 │   │   │   ├── client/v1/            # 候选用户端
 │   │   │   └── backoffice/v1/        # 后台管理端
 │   │   ├── workflows/                # LangGraph 工作流（主栈）
-│   │   │   ├── interview/            # 多轮面试 StateGraph
-│   │   │   ├── question_gen/         # 题目召回自检循环
+│   │   │   ├── interview/            # 多轮面试 StateGraph（规划中）
+│   │   │   ├── question_gen/         # 题目召回自检循环（规划中）
 │   │   │   └── _shared/              # 共享基础设施
 │   │   ├── vector_db/                # Milvus 客户端 + collections
-│   │   ├── retrieval/                # RAG 检索引擎
+│   │   ├── retrieval/                # RAG 检索引擎（规划中）
 │   │   ├── llm/                      # LangChain 域（LLM / embedding）
 │   │   ├── repositories/             # 数据访问层
 │   │   ├── prompts/                  # PromptTemplate 集中管理

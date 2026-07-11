@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, UTC
 from app.models.waiting_list import WaitingList
-from app.core.security import AuthBase
+from app.core.security import verify_token as _verify_jwt
 from app.core.config import settings
 from app.db.session import transaction
 from app.exceptions.http_exceptions import APIException
@@ -37,7 +37,7 @@ class WaitingListService:
         return token
 
     async def verify_token(self, token: str) -> Dict:
-        payload = AuthBase.verify_token(token, scope="waiting-list-verification")
+        payload = _verify_jwt(token, scope="waiting-list-verification")
         if not payload:
             raise APIException(status_code=400, message="无效或已过期的验证链接")
 

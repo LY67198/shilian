@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.security import AuthBase
+from app.core.security import verify_token
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -15,7 +15,7 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """获取当前登录用户"""
-    payload = AuthBase.verify_token(token, scope="client")
+    payload = verify_token(token, scope="client")
     if not payload:
         raise HTTPException(
             status_code=403,

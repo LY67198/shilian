@@ -163,9 +163,9 @@ START → retrieve → check_sufficiency
 
 ### 4.1 Tracing
 
-接入 LangFuse（开源、有 free tier），通过 callback handler 集成 LangChain/LangGraph。
+接入 LangSmith（LangChain 官方可观测平台），通过环境变量 `LANGSMITH_API_KEY` + `LANGSMITH_PROJECT` 控制。当前 `workflows/_shared/tracing.py` 已实现基础接入，Phase 4 补全节点级 trace 集成。
 
-配置：`TRACING_ENABLED: bool = False`（开发环境关闭）。
+配置：缺 `LANGSMITH_API_KEY` 时自动跳过，零副作用。
 
 ### 4.2 多 Agent 拆分
 
@@ -196,4 +196,4 @@ InterviewOrchestrator (supervisor)
 
 ### 4.4 RAGAS 持续评估
 
-每次 RAG pipeline 改动后跑 `pytest -m "ragas"`，输出对比表，结果写 LangFuse。
+每次 RAG pipeline 改动后跑 `pytest -m "ragas"`，输出对比表，结果写 LangSmith。

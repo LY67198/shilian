@@ -9,7 +9,7 @@ from app.models.user import User
 from app.schemas.client.interview import InterviewStart, AnswerSubmit
 from app.schemas.response import ApiResponse
 from app.services.client.interview_service import InterviewService
-from app.workflows.interview.service import interview_graph_service
+from app.workflows.interview.service import submit_answer as submit_answer_to_graph
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ async def submit_answer(
     db: AsyncSession = Depends(get_db),
 ):
     """提交当前题目的回答（非流式）"""
-    async for result in interview_graph_service.submit_answer(
+    async for result in submit_answer_to_graph(
         db=db,
         user_id=current_user.id,
         interview_id=interview_id,
@@ -61,7 +61,7 @@ async def submit_answer_stream(
     """提交回答并通过 SSE 流式返回 AI 评估"""
 
     async def event_generator():
-        async for sse_str in interview_graph_service.submit_answer(
+        async for sse_str in submit_answer_to_graph(
             db=db,
             user_id=current_user.id,
             interview_id=interview_id,
